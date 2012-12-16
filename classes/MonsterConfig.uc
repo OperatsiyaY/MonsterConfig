@@ -15,28 +15,100 @@ local KFGametype GT;
 // замена ZombieVolume на на MCZombieVolume
 var bool bReplaceZombieVolumes;
 
+var array<ZombieVolume> ZMV;
+
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
 {
 	// Replace ZombieVolumes with Our MCZombieVolume
-	if (ZombieVolume(Other)!=none && MCZombieVolume(Other)==none)
+	if ( ZombieVolume(Other)!=none && MCZombieVolume(Other)==none )
+	{
 		bReplaceZombieVolumes=true;
+		ZMV.Insert(0,1);
+		ZMV[0] = ZombieVolume(Other);
+	}
 	return true;
 }
 //--------------------------------------------------------------------------------------------------
 simulated function Tick(float dt)
 {
-	local int i;
-	local vector loc;
-	local rotator rot;
-	local UMZombieVolume ZV;
-
-	if (bReplaceZombieVolumes)
+	while ( ZMV.Length > 0 )
+	{
+		ReplaceZombieVolume(ZMV[0]);
+		ZMV.Remove(0,1);
+	}
+/*
+	if ( bReplaceZombieVolumes )
 	{
 		ReplaceZombieVolumes();
 		bReplaceZombieVolumes=false;
 	}
+*/
+}
+//--------------------------------------------------------------------------------------------------
+function bool ReplaceZombieVolume(ZombieVolume CurZMV)
+{
+	local int i,n,j;
+	local MCZombieVolume NewVol;
+	
+	n = GT.ZedSpawnList.Length;
+	
+	for(i=0; i<n; i++)
+	{
+		if ( CurZMV == GT.ZedSpawnList[i] )
+		{
+			break;
+		}
+	}
+	
+	if ( i >= n )
+	{
+		return false; // Fail
+	}
+	
+	NewVol = Spawn(class'MCZombieVolume',Level,,CurZMV.Location,CurZMV.Rotation);
+	
+	n = CurZMV.SpawnPos.Length;
+	for(j=0; j<n; j++)
+		NewVol.SpawnPos[j] = CurZMV.SpawnPos[j];
+	
+	if ( n > 0 )
+		NewVol.bHasInitSpawnPoints = true;
+
+	n = CurZMV.DisabledWaveNums.Length;
+	for(j=0; j<n; j++)
+		NewVol.DisabledWaveNums[j] = CurZMV.DisabledWaveNums[j];
+	
+	n = CurZMV.DisallowedZeds.Length;
+	for(j=0; j<n; j++)
+		NewVol.DisallowedZeds[j] = CurZMV.DisallowedZeds[j];
+		
+	n = CurZMV.OnlyAllowedZeds.Length;
+	for(j=0; j<n; j++)
+		NewVol.OnlyAllowedZeds[j] = CurZMV.OnlyAllowedZeds[j];
+		
+	n = CurZMV.RoomDoorsList.Length;
+	for(j=0; j<n; j++)
+		NewVol.RoomDoorsList[j] = CurZMV.RoomDoorsList[j];
+
+	NewVol.CanRespawnTime = CurZMV.CanRespawnTime;
+	NewVol.bMassiveZeds = CurZMV.bMassiveZeds;
+	NewVol.bLeapingZeds = CurZMV.bLeapingZeds;
+	NewVol.bNormalZeds = CurZMV.bNormalZeds;
+	NewVol.bRangedZeds = CurZMV.bRangedZeds;
+	NewVol.TouchDisableTime = CurZMV.TouchDisableTime;
+	NewVol.ZombieCountMulti = CurZMV.ZombieCountMulti;
+	NewVol.bVolumeIsEnabled = CurZMV.bVolumeIsEnabled;
+	NewVol.SpawnDesirability = CurZMV.SpawnDesirability;
+	NewVol.MinDistanceToPlayer = CurZMV.MinDistanceToPlayer;
+	NewVol.bNoZAxisDistPenalty = CurZMV.bNoZAxisDistPenalty;
+//	NewVol. = CurZMV.;
+	
+//	CurZMV.Destroy(); // не уничтожаем, возможно нужны для мапперов
+	GT.ZedSpawnList[i] = NewVol;
+	
+	return true;
 }
 //--------------------------------------------------------------------------------------------------
 simulated function ReplaceZombieVolumes()
