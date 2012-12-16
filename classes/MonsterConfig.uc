@@ -29,6 +29,12 @@ function PostBeginPlay()
 	local MCMonsterInfo tMonsterInfo;
 	local class<KFMonster> M;
 	local MCSquadInfo tSquadInfo;
+	
+	if ( MCGameType(Level.Game) == none )
+	{
+		Level.ServerTravel("?game=MonsterConfig.MCGameType");
+		return;
+	}
 
 	// инициализируем лог
 	MCLog = Spawn(class'FileLog');
@@ -94,6 +100,8 @@ function PostBeginPlay()
 	}
 	
 	// 
+	
+	MCGameType(GT).bReady = true;
 }
 //--------------------------------------------------------------------------------------------------
 function bool isValidMonsterInfo(MCSquadInfo.SquadMonsterInfo MInfo)
