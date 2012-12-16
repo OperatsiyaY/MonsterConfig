@@ -5,7 +5,6 @@
  * вызывается функция ReplaceZombieVolumes, которая заменяет все ZombieVolume в 
  * KFGameType.ZedSpawnList на наши MCZombieVolume
  * 
- * ываыва
  */
 class MonsterConfig extends Mutator;
 
@@ -13,10 +12,10 @@ class MonsterConfig extends Mutator;
 local KFGametype GT;
 
 // замена ZombieVolume на на MCZombieVolume
-var bool bReplaceZombieVolumes;
+//var bool bReplaceZombieVolumes;
+var array<ZombieVolume> ZMV; // Массив ЗВ которые будут приготавливаться к использованию
 
-var array<ZombieVolume> ZMV;
-
+var config array<MCMonsterInfo> Monsters;
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
@@ -24,7 +23,7 @@ function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
 	// Replace ZombieVolumes with Our MCZombieVolume
 	if ( ZombieVolume(Other)!=none && MCZombieVolume(Other)==none )
 	{
-		bReplaceZombieVolumes=true;
+//		bReplaceZombieVolumes=true;
 		ZMV.Insert(0,1);
 		ZMV[0] = ZombieVolume(Other);
 	}
@@ -33,6 +32,13 @@ function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
 //--------------------------------------------------------------------------------------------------
 simulated function Tick(float dt)
 {
+	if ( GT == none )
+	{
+		GT = KFGameType(Level.Game);
+		if ( GT == none )
+			return;
+	}
+
 	while ( ZMV.Length > 0 )
 	{
 		ReplaceZombieVolume(ZMV[0]);
@@ -53,7 +59,6 @@ function bool ReplaceZombieVolume(ZombieVolume CurZMV)
 	local MCZombieVolume NewVol;
 	
 	n = GT.ZedSpawnList.Length;
-	
 	for(i=0; i<n; i++)
 	{
 		if ( CurZMV == GT.ZedSpawnList[i] )
@@ -111,8 +116,10 @@ function bool ReplaceZombieVolume(ZombieVolume CurZMV)
 	return true;
 }
 //--------------------------------------------------------------------------------------------------
+/*
 simulated function ReplaceZombieVolumes()
 {
+
 	local ZombieVolume ZV;
 	local UMZombieVolume UZV;
 	local KFGametype GT;
@@ -146,6 +153,7 @@ simulated function ReplaceZombieVolumes()
 		GT.ZedSpawnList[i] = UZV;
 	}
 }
+*/
 //--------------------------------------------------------------------------------------------------
 defaultproperties
 {
