@@ -7,138 +7,222 @@
  *
  */
 class MonsterConfig extends Mutator
-	dependson(MCSquadInfo);
+	dependson(MCSquadInfo)
+	ParseConfig
+	config(MonsterConfig);
 
 // общие
-var KFGametype GT;
-var FileLog MCLog; // отдельный лог
+var KFGametype		GT;
+var FileLog			MCLog; // отдельный лог
+var config class<KFGameType>	GameTypeClass; // позволить юзерам наследовать уже свой GameType, наследованынй от нашего
 
 // замена ZombieVolume на на MCZombieVolume
-var array<ZombieVolume> ZMV; // Массив ЗВ которые будут приготавливаться к использованию
+var array<ZombieVolume> PendingZombieVolumes; // Массив ZombieVolumes, будут заменены в след.тике на наши
 
 // массивы настроек
-var config array<MCMonsterInfo> Monsters;
-var config array<MCSquadInfo> Squads;
-var config array<MCSpecialSquadInfo> SpecialSquads;
+var array<MCMonsterInfo>		Monsters;
+var array<MCSquadInfo>			Squads;
+var array<MCWaveInfo>			Waves;
+var MCMapInfo					MapInfo;
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 function PostBeginPlay()
 {
-	local int i,j;
-	local array<string> Names;
-	local MCMonsterInfo tMonsterInfo;
-	local class<KFMonster> M;
-	local MCSquadInfo tSquadInfo;
-	
-	if ( MCGameType(Level.Game) == none )
+	if (GameTypeClass==none || !ClassIsChildOf(GameTypeClass, class'MCGameType') )
 	{
-		Level.ServerTravel("?game=MonsterConfig.MCGameType");
-		return;
+		toLog("Specified GameTypeClass is not valid, so using MCGameType. Check MonsterConfig.ini");
+		GameTypeClass=class'MCGameType';
+	}
+	if ( (Level.Game).Class != GameTypeClass )
+	{
+		//Level.ServerTravel("?game="$string(GameTypeClass), true);
+		//return;
 	}
 
-	// инициализируем лог
-	MCLog = Spawn(class'FileLog');
-	MCLog.OpenLog("MonsterConfigLog");
+	ReadConfig();
 
-	// читаем конфиг монстров
+	MCGameType(GT).bReady = true;
+}
+//--------------------------------------------------------------------------------------------------
+function ReadConfig()
+{
+	local int i,j;
+	local array<string> Names;
+	local MCMonsterInfo	tMonsterInfo;
+	local MCSquadInfo	tSquadInfo;
+	local MCWaveInfo	tWaveInfo;
+	local MCMapInfo		tMapInfo;
+
+
+	// чтение описаний монстров
 	Names = class'MCMonsterInfo'.static.GetNames();
 	for (i = 0; i < Names.length; i++)
 	{
+		if (Len(Names[i])==0) continue;
 		tMonsterInfo = new(None, Names[i]) class'MCMonsterInfo';
-		
-		M = class<KFMonster>(DynamicLoadObject(tMonsterInfo.MName, Class'Class'));
-		if (M!=none)
+		if (tMonsterInfo.MonsterClass != none)
 		{
 			Monsters.Insert(0,1);
 			Monsters[0] = tMonsterInfo;
-			Monsters[0].MClass = M;
 		}
 		else
-			toLog("Can't load MonsterInfo:"@tMonsterInfo.MName@" check ini");
+			toLog("Monster:"@string(tMonsterInfo.Name)$". MClass not found. Check settings in"@class'MCMonsterInfo'.default.ConfigFile$".ini");
 	}
+	if (Monsters.Length==0)
+		toLog("No valid Monsters found! So no monsters will spawn");
 
-	// читаем конфиг отрядов
+	// чтение описаний отрядов
 	Names = class'MCSquadInfo'.static.GetNames();
 	for (i = 0; i < Names.length; i++)
 	{
+		if (Len(Names[i])==0) continue;
 		tSquadInfo = new(None, Names[i]) class'MCSquadInfo';
-		for (j=0;i<tSquadInfo.Monster.Length;j++)
+		for (j=0; j<tSquadInfo.Monster.Length; j++)
 		{
-			if ( !isValidMonsterInfo(tSquadInfo.Monster[j]) )
+			if ( !isValidMonsterName(tSquadInfo.Monster[j].MonsterName) )
 			{
-				toLog("SquadInfo monster not found:"$tSquadInfo.Monster[j].Name);
+				toLog("Squad:"@string(tSquadInfo.Name)@"Monster"@tSquadInfo.Monster[j].MonsterName@"not found. Check settings in"@class'MCSquadInfo'.default.ConfigFile$".ini");
 				tSquadInfo.Monster.Remove(j,1);
 				j--;
 			}
 		}
-		if (tSquadInfo.Monster.Length>0)
+		if (tSquadInfo.Monster.Length > 0)
 		{
 			Squads.Insert(0,1);
 			Squads[0] = tSquadInfo;
 		}
 	}
+	if (Squads.Length==0)
+		toLog("No valid Squads found! So no monsters will spawn");
 
-	// читаем конфиг спец.отрядов
-	Names = class'MCSpecialSquadInfo'.static.GetNames();
+	// чтение описаний волн
+	Names = class'MCWaveInfo'.static.GetNames();
 	for (i = 0; i < Names.length; i++)
 	{
-		tSquadInfo = new(None, Names[i]) class'MCSpecialSquadInfo';
-		for (j=0;i<tSquadInfo.Monster.Length;j++)
+		if (Len(Names[i])==0) continue;
+		tWaveInfo = new(None, Names[i]) class'MCWaveInfo';
+		 // пропускаем в этом месте, если волна сконфигурена только для определенных карт
+		if (tWaveInfo.bMapSpecific)
+			continue;
+
+		if (isValidWave(tWaveInfo))
+			Waves[Waves.Length] = tWaveInfo;
+		else
+			toLog("Wave:"@string(tWaveInfo.Name)@"has no valid Squad or SpecialSquad records, so it wont be loaded");
+	}
+	if(Waves.Length==0)
+		toLog("No valid WaveInfo's found! So no monsters will spawn");
+
+	// чтение переменных, зависимых от карты
+	tMapInfo=none;
+	Names = class'MCMapInfo'.static.GetNames();
+	for (i = 0; i < Names.length; i++)
+	{
+		if (string(Level.outer.name) ~= Names[i])
 		{
-			if ( !isValidMonsterInfo(tSquadInfo.Monster[j]) )
-			{
-				toLog("SpecialSquadInfo monster not found:"$tSquadInfo.Monster[j].Name);
-				tSquadInfo.Monster.Remove(j,1);
-				j--;
-			}
-		}
-		if (tSquadInfo.Monster.Length>0)
-		{
-			SpecialSquads.Insert(0,1);
-			SpecialSquads[0] = MCSpecialSquadInfo(tSquadInfo);
+			tMapInfo = new(None, Names[i]) class'MCMapInfo';
+			break;
 		}
 	}
-	
-	// 
-	
-	MCGameType(GT).bReady = true;
+	// если для данной карты нет переменных, читаем default значения
+	if (tMapInfo==none)
+		tMapInfo = new(None, "default") class'MCMapInfo';
+
+	for (i=0; i<tMapInfo.Waves.Length; i++)
+	{
+		if ( Len(tMapInfo.Waves[i])==0 || !isValidWaveName(tMapInfo.Waves[i]) )
+		{
+			toLog("MapInfo:"@string(tMapInfo.Name)@" | WaveName"@string(tWaveInfo.Name)@"is not valid. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+			tMapInfo.Waves.Remove(i,1);
+			i--;
+			continue;
+		}
+		tWaveInfo = new(None, tMapInfo.Waves[i]) class'MCWaveInfo';
+		if (tWaveInfo.bMapSpecific==false) // обычная волна, она и так будет загружена
+		{
+			toLog("MapInfo:"@string(tMapInfo.Name)@" | WaveName"@string(tWaveInfo.Name)@"is not map-specific, so already loaded. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+			tMapInfo.Waves.Remove(i,1);
+			i--;
+			continue;
+		}
+		if (isValidWave(tWaveInfo))
+		{
+			toLog("Map-specific wave"@string(tWaveInfo.Name)@"added.");
+			Waves[Waves.Length] = tWaveInfo;
+		}
+		else
+		{
+			tMapInfo.Waves.Remove(i,1);
+			i--;
+			toLog("Map-specific Wave:"@string(tWaveInfo.Name)@"has no valid Squad or SpecialSquad records, so it wont be loaded");
+		}
+	}
+	MapInfo = tMapInfo;
 }
 //--------------------------------------------------------------------------------------------------
-function bool isValidMonsterInfo(MCSquadInfo.SquadMonsterInfo MInfo)
+function bool isValidWaveName(string WaveName)
 {
+	local array<string> Names;
 	local int i;
-	local string t1, t2;
-	for (i=0;i<Monsters.Length;i++)
-	{
-		t1 = MInfo.Name;
-		t2 = string(Monsters[i].Name);
-		t2 = string(Monsters[i]);
-		
-		if (MInfo.Name == string(Monsters[i].Name))
+	Names = class'MCWaveInfo'.static.GetNames();
+	for (i=0; i<Names.Length; i++)
+		if (WaveName ~= Names[i])
 			return true;
-	}
 	return false;
 }
 //--------------------------------------------------------------------------------------------------
-function toLog(string M)
+function bool isValidWave(out MCWaveInfo tWaveInfo)
 {
-	MCLog.LogF(M);
+	local int j;
+	for (j=0; j < tWaveInfo.Squad.Length; j++)
+	{
+		// удаляем сквады, имен которых нет в конфиге
+		if (!isValidSquad(tWaveInfo.Squad[j]))
+		{
+			toLog("Wave:"@string(tWaveInfo.Name)@"Squad"@tWaveInfo.Squad[j]@"not found. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+			tWaveInfo.Squad.Remove(j,1);
+			j--;
+		}
+	}
+	for (j=0; j < tWaveInfo.SpecialSquad.Length; j++)
+	{
+		// удаляем сквады, имен которых нет в конфиге
+		if (!isValidSquad(tWaveInfo.SpecialSquad[j]))
+		{
+			toLog("Wave:"@string(tWaveInfo.Name)@"SpecialSquad"@tWaveInfo.SpecialSquad[j]@"not found. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+			tWaveInfo.SpecialSquad.Remove(j,1);
+			j--;
+		}
+	}
+	return (tWaveInfo.Squad.Length > 0 || tWaveInfo.SpecialSquad.Length > 0);
 }
 //--------------------------------------------------------------------------------------------------
-function Destroyed()
+function bool isValidSquad(string SquadName)
 {
-	Super.Destroyed();
-	MCLog.CloseLog();
+	local int i;
+	for (i=0;i<Squads.Length;i++)
+		if (SquadName == string(Squads[i].Name))
+			return true;
+	return false;
+}
+//--------------------------------------------------------------------------------------------------
+function bool isValidMonsterName(string MonsterName)
+{
+	local int i;
+	for (i=0; i<Monsters.Length; i++)
+		if (MonsterName == string(Monsters[i].Name))
+			return true;
+	return false;
 }
 //--------------------------------------------------------------------------------------------------
 function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
 {
-	// Replace ZombieVolumes with Our MCZombieVolume
+	// Замена ZombieVolumes на MCZombieVolume
 	if ( ZombieVolume(Other)!=none && MCZombieVolume(Other)==none )
 	{
 //		bReplaceZombieVolumes=true;
-		ZMV.Insert(0,1);
-		ZMV[0] = ZombieVolume(Other);
+		PendingZombieVolumes.Insert(0,1);
+		PendingZombieVolumes[0] = ZombieVolume(Other);
 	}
 	return true;
 }
@@ -151,19 +235,11 @@ simulated function Tick(float dt)
 		if ( GT == none )
 			return;
 	}
-
-	while ( ZMV.Length > 0 )
+	while ( PendingZombieVolumes.Length > 0 )
 	{
-		ReplaceZombieVolume(ZMV[0]);
-		ZMV.Remove(0,1);
+		ReplaceZombieVolume(PendingZombieVolumes[0]);
+		PendingZombieVolumes.Remove(0,1);
 	}
-/*
-	if ( bReplaceZombieVolumes )
-	{
-		ReplaceZombieVolumes();
-		bReplaceZombieVolumes=false;
-	}
-*/
 }
 //--------------------------------------------------------------------------------------------------
 function bool ReplaceZombieVolume(ZombieVolume CurZMV)
@@ -171,26 +247,24 @@ function bool ReplaceZombieVolume(ZombieVolume CurZMV)
 	local int i,n,j;
 	local MCZombieVolume NewVol;
 
+	// определяем что ZombieVolume есть в листе ZedSpawnList, иначе не заменяем.
+	// TELO: Зачем эта проверка? заменять любой волум, попавшийся CheckReplacement'у и пришедший сюда
 	n = GT.ZedSpawnList.Length;
 	for(i=0; i<n; i++)
-	{
 		if ( CurZMV == GT.ZedSpawnList[i] )
-		{
 			break;
-		}
-	}
-
 	if ( i >= n )
 	{
-		return false; // Fail
+		toLog("ReplaceZombieVolume: ZombieVolume not found");
+		return false; // ZombieVolume не найден, выход
 	}
 
 	NewVol = Spawn(class'MCZombieVolume',Level,,CurZMV.Location,CurZMV.Rotation);
 
+	// копируем точки спавна
 	n = CurZMV.SpawnPos.Length;
 	for(j=0; j<n; j++)
 		NewVol.SpawnPos[j] = CurZMV.SpawnPos[j];
-
 	if ( n > 0 )
 		NewVol.bHasInitSpawnPoints = true;
 
@@ -221,52 +295,33 @@ function bool ReplaceZombieVolume(ZombieVolume CurZMV)
 	NewVol.SpawnDesirability = CurZMV.SpawnDesirability;
 	NewVol.MinDistanceToPlayer = CurZMV.MinDistanceToPlayer;
 	NewVol.bNoZAxisDistPenalty = CurZMV.bNoZAxisDistPenalty;
-//	NewVol. = CurZMV.;
+	// NewVol. = CurZMV.;
 
-//	CurZMV.Destroy(); // не уничтожаем, возможно нужны для мапперов
+	// CurZMV.Destroy(); // не уничтожаем, возможно нужны для мапперов
 	GT.ZedSpawnList[i] = NewVol;
 
 	return true;
 }
 //--------------------------------------------------------------------------------------------------
-/*
-simulated function ReplaceZombieVolumes()
+function toLog(string M)
 {
-
-	local ZombieVolume ZV;
-	local UMZombieVolume UZV;
-	local KFGametype GT;
-	local int i,j;
-
-	GT = KFGametype(Level.Game);
-	if (GT==none)
+	// инициализируем лог
+	if (MCLog==none)
 	{
-		log("cant find KFGameType");
-		return;
+		MCLog = Spawn(class'FileLog');
+		MCLog.OpenLog("MonsterConfigLog","log",true); // overwrite
+		MCLog.LogF("---------------------------------------------");
 	}
-	for (i=0; i<GT.ZedSpawnList.Length; i++)
-	{
-		if (UMZombieVolume(GT.ZedSpawnList[i])!=none)
-			continue;
-		//ReplaceWith(aZVol[i],"UnitedMut_v57.UMZombieVolume");
-		log("Spawn UMZombieVolume");
-		UZV = Spawn(class'UMZombieVolume', Level);
-		ZV = GT.ZedSpawnList[i];
-		UZV.SetLocation(ZV.Location);
-		UZV.SetRotation(ZV.Rotation);
-
-		//thanks to Marco
-		for (j=0;j<ZV.SpawnPos.Length;j++)
-			UZV.SpawnPos[j] = ZV.SpawnPos[j];
-
-		UZV.bDebugZombieSpawning = true;
-		UZV.bDebugZoneSelection = true;
-		UZV.bDebugSpawnSelection = true;
-		GT.ZedSpawnList[i].Destroy();
-		GT.ZedSpawnList[i] = UZV;
-	}
+	MCLog.LogF(M);
+	Log("MonsterConfig:"@M);
 }
-*/
+//--------------------------------------------------------------------------------------------------
+function Destroyed()
+{
+	Super.Destroyed();
+	MCLog.CloseLog();
+}
+//--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 defaultproperties
 {
