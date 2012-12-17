@@ -41,6 +41,32 @@ function PostBeginPlay()
 
 	ReadConfig();
 
+	/* KFGameType->InitGame:
+	 * Установка KFGameType.MaxPlayers
+	 * Установка KFLRules.WaveSpawnPeriod который используется в CalcNextSquadSpawnTime()
+	 * или переписать его полностью, чтобы использовал наш DelayBetweenSquads из WaveInfo
+	 *
+	 * KFGameType.DoWaveEnd
+	 * Дает вознаграждение выжившим
+	 * Устанавливает отчет до следующей волны WaveCountDown = Max(TimeBetweenWaves,1);  <--- переписать
+	 * Увеличивает номер волны
+	 * Меняет выбранный перк
+	 * Респавнит мертвых
+	 * Зачисляет стату
+	 * Респавнит двери
+	 * 
+	 * KFGameType.InitMapWaveCfg
+	 * Выключает ZombieVolume, исходя из ZombieVolume.DisabledWaveNums
+	 * 
+	 * KFGameType.StartWaveBoss
+	 * Устанавливает NextSpawnSquad.Length = 1
+	 * Устанавливает NextSpawnSquad[0] - босса
+	 * KFGameReplicationInfo(Level.Game.GameReplicationInfo).MaxMonsters = 1;
+	 * TotalMaxMonsters = 1;
+	 * bWaveBossInProgress = True;
+	 */ 
+	
+	
 	MCGameType(GT).bReady = true;
 }
 //--------------------------------------------------------------------------------------------------
