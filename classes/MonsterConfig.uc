@@ -10,6 +10,10 @@ class MonsterConfig extends Mutator
 	dependson(MCSquadInfo)
 	ParseConfig
 	config(MonsterConfig);
+	
+var config int		FakedPlayersNum;
+var config float	MonstersMaxAtOnceMod,MonstersTotalMod;
+var config float	MonsterBodyHPMod,MonsterHeadHPMod,MonsterSpeedMod,MonsterDamageMod;
 
 // общие
 var KFGametype		GT;
@@ -65,9 +69,8 @@ function PostBeginPlay()
 	 * TotalMaxMonsters = 1;
 	 * bWaveBossInProgress = True;
 	 */ 
-	
-	
-	MCGameType(GT).bReady = true;
+
+	MCGameType(GT).PostInit(Self);
 }
 //--------------------------------------------------------------------------------------------------
 function ReadConfig()
@@ -105,7 +108,7 @@ function ReadConfig()
 		tSquadInfo = new(None, Names[i]) class'MCSquadInfo';
 		for (j=0; j<tSquadInfo.Monster.Length; j++)
 		{
-			if ( !isValidMonsterName(tSquadInfo.Monster[j].MonsterName) )
+			if ( GetMonster(tSquadInfo.Monster[j].MonsterName) == none )
 			{
 				toLog("Squad:"@string(tSquadInfo.Name)@"Monster"@tSquadInfo.Monster[j].MonsterName@"not found. Check settings in"@class'MCSquadInfo'.default.ConfigFile$".ini");
 				tSquadInfo.Monster.Remove(j,1);
@@ -203,7 +206,7 @@ function bool isValidWave(out MCWaveInfo tWaveInfo)
 	for (j=0; j < tWaveInfo.Squad.Length; j++)
 	{
 		// удаляем сквады, имен которых нет в конфиге
-		if (!isValidSquad(tWaveInfo.Squad[j]))
+		if ( GetSquad(tWaveInfo.Squad[j]) == none )
 		{
 			toLog("Wave:"@string(tWaveInfo.Name)@"Squad"@tWaveInfo.Squad[j]@"not found. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
 			tWaveInfo.Squad.Remove(j,1);
@@ -213,7 +216,7 @@ function bool isValidWave(out MCWaveInfo tWaveInfo)
 	for (j=0; j < tWaveInfo.SpecialSquad.Length; j++)
 	{
 		// удаляем сквады, имен которых нет в конфиге
-		if (!isValidSquad(tWaveInfo.SpecialSquad[j]))
+		if ( GetSquad(tWaveInfo.SpecialSquad[j]) == none )
 		{
 			toLog("Wave:"@string(tWaveInfo.Name)@"SpecialSquad"@tWaveInfo.SpecialSquad[j]@"not found. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
 			tWaveInfo.SpecialSquad.Remove(j,1);
@@ -223,22 +226,22 @@ function bool isValidWave(out MCWaveInfo tWaveInfo)
 	return (tWaveInfo.Squad.Length > 0 || tWaveInfo.SpecialSquad.Length > 0);
 }
 //--------------------------------------------------------------------------------------------------
-function bool isValidSquad(string SquadName)
+function MCSquadInfo GetSquad(string SquadName)
 {
 	local int i;
 	for (i=0;i<Squads.Length;i++)
 		if (SquadName == string(Squads[i].Name))
-			return true;
-	return false;
+			return Squads[i];
+	return None;
 }
 //--------------------------------------------------------------------------------------------------
-function bool isValidMonsterName(string MonsterName)
+function MCMonsterInfo GetMonster(string MonsterName)
 {
 	local int i;
 	for (i=0; i<Monsters.Length; i++)
 		if (MonsterName == string(Monsters[i].Name))
-			return true;
-	return false;
+			return Monsters[i];
+	return None;
 }
 //--------------------------------------------------------------------------------------------------
 function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
@@ -329,17 +332,29 @@ function bool ReplaceZombieVolume(ZombieVolume CurZMV)
 	return true;
 }
 //--------------------------------------------------------------------------------------------------
-function toLog(string M)
+function toLog(string M, optional Object Sender)
 {
+	local string Spec;
+
 	// инициализируем лог
 	if (MCLog==none)
 	{
 		MCLog = Spawn(class'FileLog');
 		MCLog.OpenLog("MonsterConfigLog","log",true); // overwrite
 		MCLog.LogF("---------------------------------------------");
+		SetTimer(15,false);
 	}
-	MCLog.LogF(M);
-	Log("MonsterConfig:"@M);
+	
+	if ( Sender != none )
+	{
+		Spec = String(Sender.Name) $ " : ";
+	}
+	else
+	{
+		Spec = "";
+	}
+	MCLog.LogF(Spec $ M);
+	Log("MonsterConfig:" @ Spec $ M);
 }
 //--------------------------------------------------------------------------------------------------
 function Destroyed()
@@ -348,9 +363,103 @@ function Destroyed()
 	MCLog.CloseLog();
 }
 //--------------------------------------------------------------------------------------------------
+function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
+{
+	local float BestPos;
+	local int i,n;
+	local MCWaveInfo Ret;
+	
+	Ret = CurWave;
+	n = Waves.Length;
+	BestPos = CurWave.Position;
+	
+	for(i=0; i<n; i++)
+	{
+		if ( Waves[i].Position < CurWave.Position )
+			continue;
+		
+		if ( BestPos == CurWave.Position )
+		{
+			Ret = Waves[i];
+			BestPos = Ret.Position;
+			continue;
+		}
+		
+		if ( Waves[i].Position < BestPos )
+		{
+			Ret = Waves[i];
+			BestPos = Ret.Position;
+		}
+	}
+	
+	if ( Ret == CurWave )
+		return none;
+		
+	return Ret;
+}
+
+function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
+{
+	local int i,n;
+	local float BestPos;
+	
+	BestPos = CurWave.Position;
+	for (i=0;i<Waves.Length;i++)
+	{
+		if (BestPos <= Waves[i].Position)
+			continue;
+		if (BestPos == CurWave.Postion)
+			BestPos = Waves[i].Position;
+			
+		if (Waves[i].Position < BestPos)
+			BestPos = Waves[i].Position;
+	}
+	return BestPos;
+}
+//--------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
+function float GetNumPlayers(optional bool bOnlyAlive, optional bool bNotCountFaked)
+{
+	local int NumPlayers;
+	local Controller C;
+	
+	For( C=Level.ControllerList; C!=None; C=C.NextController )
+	{
+		if( C.bIsPlayer && ( !bOnlyAlive || (C.Pawn!=None && C.Pawn.Health > 0 ) ) )
+		{
+			NumPlayers++;
+		}
+	}
+	if ( !bNotCountFaked )
+		return NumPlayers + FakedPlayersNum;
+		
+	return NumPlayers;
+}
+//--------------------------------------------------------------------------------------------------
+simulated function Timer()
+{
+	Super.Timer();
+	
+	if ( MCLog != none )
+	{
+		MCLog.CloseLog();
+		MCLog.OpenLog("MonsterConfigLog","log",false);
+	}
+	
+	SetTimer(15,false);
+}
 //--------------------------------------------------------------------------------------------------
 defaultproperties
 {
-	bAlwaysRelevant=true
+	bAlwaysRelevant = true
 	RemoteRole = ROLE_SimulatedProxy
+	
+	FakedPlayersNum = 0
+	MonstersTotalMod = 1.00
+	MonstersMaxAtOnceMod = 1.00
+	
+	MonsterBodyHPMod = 1.00
+	MonsterHeadHPMod = 1.00
+	MonsterSpeedMod = 1.00
+	MonsterDamageMod = 1.00
 }

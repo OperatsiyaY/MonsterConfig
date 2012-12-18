@@ -4,11 +4,22 @@ class MCMapInfo extends Object
 	config(MonsterConfig);
 
 var const string ConfigFile;
+
+struct PerPlayerMapInfo
+{
+	var float	DelayBetweenSquadsCoeff;
+};
 	
 var config array<string>	Waves; // additional map-specific waves
 var config float			DelayBetweenSquadsCoeff;
-var config int				MonstersTotalCoeff;
-var config int				MonstersMaxAtOnceCoeff;
+var config float			MonstersTotalCoeff;
+var config float			MonstersMaxAtOnceCoeff;
+var config bool				bUseZombieVolumeWaveDisabling;
+
+
+var config float	MonsterBodyHPMod,MonsterHeadHPMod,MonsterSpeedMod,MonsterDamageMod;
+
+var config PerPlayerMapInfo	PerPlayer;
 //--------------------------------------------------------------------------------------------------
 static function array<string> GetNames()
 {
@@ -23,4 +34,11 @@ defaultproperties
 	DelayBetweenSquadsCoeff=1.0
 	MonstersTotalCoeff=1.0
 	MonstersMaxAtOnceCoeff=1.0
+	
+	PerPlayer=(DelayBetweenSquadsCoeff=0.85)
+	
+	MonsterBodyHPMod = 1.00
+	MonsterHeadHPMod = 1.00
+	MonsterSpeedMod = 1.00
+	MonsterDamageMod = 1.00
 }
