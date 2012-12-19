@@ -32,16 +32,19 @@ var MCMapInfo					MapInfo;
 //--------------------------------------------------------------------------------------------------
 function PostBeginPlay()
 {
+	toLog("PostBeginPlay()");
 	if (GameTypeClass==none || !ClassIsChildOf(GameTypeClass, class'MCGameType') )
 	{
 		toLog("Specified GameTypeClass is not valid, so using MCGameType. Check MonsterConfig.ini");
 		GameTypeClass=class'MCGameType';
 	}
-	if ( (Level.Game).Class != GameTypeClass )
+	if ( (Level.Game).Class != GameTypeClass && !ClassIsChildOf((Level.Game).Class, class'MCGameType'))
 	{
-		//Level.ServerTravel("?game="$string(GameTypeClass), true);
-		//return;
+		toLog("Travelling to"@string(GameTypeClass));
+		Level.ServerTravel("?game="$string(GameTypeClass), true);
+		return;
 	}
+	GT = MCGameType(Level.Game);
 
 	ReadConfig();
 
@@ -81,7 +84,6 @@ function ReadConfig()
 	local MCSquadInfo	tSquadInfo;
 	local MCWaveInfo	tWaveInfo;
 	local MCMapInfo		tMapInfo;
-
 
 	// чтение описаний монстров
 	Names = class'MCMonsterInfo'.static.GetNames();
@@ -134,8 +136,25 @@ function ReadConfig()
 		if (tWaveInfo.bMapSpecific)
 			continue;
 
-		if (isValidWave(tWaveInfo))
+		if (isValidWave(tWaveInfo)) // проверяет есть ли валидные сквады в волне
+		{
+			if (tWaveInfo.Position==-1) // если для волны не указали Position
+			{
+				// пытаемся выяснить номер волны исходя из названия волны (Wave_4lol) = 4я волна
+				if ( !TryGetNumber(string(tWaveInfo.Name), tWaveInfo.Position) )
+				{
+					tWaveInfo.Position = FMax(GetLastWave().Position,0.f) + 0.1;
+					toLog("Wave:"@string(tWaveInfo.Name)@"Position not specified. Also no numbers in WaveName. So position will be"@tWaveInfo.Position@". Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+				}
+			}
+			while (bWavePositionAlreadyExist(tWaveInfo.Position))
+			{
+				toLog("Wave:"@string(tWaveInfo.Name)@"Position"@tWaveInfo.Position@"already exists. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+				tWaveInfo.Position+=0.1;
+			}
+			toLog("Wave:"@string(tWaveInfo.Name)@"loaded with position"@tWaveInfo.Position);
 			Waves[Waves.Length] = tWaveInfo;
+		}
 		else
 			toLog("Wave:"@string(tWaveInfo.Name)@"has no valid Squad or SpecialSquad records, so it wont be loaded");
 	}
@@ -161,7 +180,7 @@ function ReadConfig()
 	{
 		if ( Len(tMapInfo.Waves[i])==0 || !isValidWaveName(tMapInfo.Waves[i]) )
 		{
-			toLog("MapInfo:"@string(tMapInfo.Name)@" | WaveName"@string(tWaveInfo.Name)@"is not valid. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+			toLog("MapInfo:"@string(tMapInfo.Name)@" | WaveName"@tMapInfo.Waves[i]@"is not valid. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
 			tMapInfo.Waves.Remove(i,1);
 			i--;
 			continue;
@@ -169,24 +188,69 @@ function ReadConfig()
 		tWaveInfo = new(None, tMapInfo.Waves[i]) class'MCWaveInfo';
 		if (tWaveInfo.bMapSpecific==false) // обычная волна, она и так будет загружена
 		{
-			toLog("MapInfo:"@string(tMapInfo.Name)@" | WaveName"@string(tWaveInfo.Name)@"is not map-specific, so already loaded. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+			toLog("MapInfo:"@string(tMapInfo.Name)@"| WaveName"@string(tWaveInfo.Name)@"is not map-specific, so already loaded. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
 			tMapInfo.Waves.Remove(i,1);
 			i--;
 			continue;
 		}
 		if (isValidWave(tWaveInfo))
 		{
-			toLog("Map-specific wave"@string(tWaveInfo.Name)@"added.");
+			if (tWaveInfo.Position==-1) // если для волны не указали Position
+			{
+				// пытаемся выяснить номер волны исходя из названия волны (Wave_4lol) = 4я волна
+				if ( !TryGetNumber(string(tWaveInfo.Name), tWaveInfo.Position) )
+				{
+					tWaveInfo.Position = FMax(GetLastWave().Position,0.f) + 0.1;
+					toLog("Wave:"@string(tWaveInfo.Name)@"Position not specified. Also no numbers in WaveName. So position will be"@tWaveInfo.Position@". The wave is map-specific, and specified for map"@string(tMapInfo.Name)@". Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+				}
+			}
+			while (bWavePositionAlreadyExist(tWaveInfo.Position))
+			{
+				toLog("Wave:"@string(tWaveInfo.Name)@"Position"@tWaveInfo.Position@"already exists. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+				tWaveInfo.Position+=0.1;
+			}
+			toLog("Map-specific Wave ("$string(tMapInfo.Name)$"):"@string(tWaveInfo.Name)@"loaded with position"@tWaveInfo.Position);
 			Waves[Waves.Length] = tWaveInfo;
 		}
 		else
 		{
 			tMapInfo.Waves.Remove(i,1);
 			i--;
-			toLog("Map-specific Wave:"@string(tWaveInfo.Name)@"has no valid Squad or SpecialSquad records, so it wont be loaded");
+			toLog("Map-specific Wave:"$string(tWaveInfo.Name)$"has no valid Squad or SpecialSquad records, so it wont be loaded");
 		}
 	}
 	MapInfo = tMapInfo;
+}
+//--------------------------------------------------------------------------------------------------
+function bool bWavePositionAlreadyExist(float F)
+{
+	local int i;
+	for (i=0;i<Waves.Length;i++)
+		if (Waves[i].Position == F)
+			return true;
+	return false;
+}
+//--------------------------------------------------------------------------------------------------
+function MCWaveInfo GetLastWave()
+{
+	local int i;
+	local MCWaveInfo Wave;
+	Wave = Waves[0];
+	for (i=0;i<Waves.Length;i++)
+		if (Waves[i].Position > Wave.Position)
+			Wave = Waves[i];
+	return Wave;
+}
+//--------------------------------------------------------------------------------------------------
+function MCWaveInfo GetFirstWave()
+{
+	local int i;
+	local MCWaveInfo Wave;
+	Wave = Waves[0];
+	for (i=0;i<Waves.Length;i++)
+		if (Waves[i].Position < Wave.Position)
+			Wave = Waves[i];
+	return Wave;
 }
 //--------------------------------------------------------------------------------------------------
 function bool isValidWaveName(string WaveName)
@@ -344,17 +408,13 @@ function toLog(string M, optional Object Sender)
 		MCLog.LogF("---------------------------------------------");
 		SetTimer(15,false);
 	}
-	
 	if ( Sender != none )
-	{
-		Spec = String(Sender.Name) $ " : ";
-	}
+		Spec = String(Sender.Name)$"->";
 	else
-	{
-		Spec = "";
-	}
+		Spec = string(self.name)$"->";
+		
 	MCLog.LogF(Spec $ M);
-	Log("MonsterConfig:" @ Spec $ M);
+	Log(Spec $ M);
 }
 //--------------------------------------------------------------------------------------------------
 function Destroyed()
@@ -363,7 +423,41 @@ function Destroyed()
 	MCLog.CloseLog();
 }
 //--------------------------------------------------------------------------------------------------
-function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
+// функция на вход получает строку Wave_1 на выходе выдает 1 (float)
+function bool TryGetNumber(string S, out float F)
+{
+	local int i;
+	local string tS;
+	i=1;
+	while (Len(S)>0)
+	{
+		tS = Right(S,i);
+		if (IsNumber(tS))
+		{
+			while (IsNumber(tS) && i<=Len(S))
+			{
+				i++;
+				tS = Right(S,i);
+			}
+			tS = Right(S,i-1);
+			F = float(tS);
+			return true;
+		}
+		else
+			S = Left(S,Len(S)-1);
+	}
+	return false;
+}
+//--------------------------------------------------------------------------------------------------
+function bool IsNumber(string Num)
+{
+	if ( Num > Chr(47) && Num < Chr(58) )
+		return true;
+
+	return false;
+}
+//--------------------------------------------------------------------------------------------------
+/*function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
 {
 	local float BestPos;
 	local int i,n;
@@ -396,25 +490,38 @@ function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
 		return none;
 		
 	return Ret;
-}
-
+}*/
+//--------------------------------------------------------------------------------------------------
+// функция возвращает следующую после CurWave волну, а при неудаче возвращает none
 function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
 {
-	local int i,n;
+	local int i;
 	local float BestPos;
-	
+	local MCWaveInfo Ret;
+
+	if (CurWave==none) // при первой волне
+		return GetFirstWave();
+
 	BestPos = CurWave.Position;
 	for (i=0;i<Waves.Length;i++)
 	{
-		if (BestPos <= Waves[i].Position)
-			continue;
-		if (BestPos == CurWave.Postion)
+		if ( Waves[i].Position <= BestPos )	// ищем только волны, следующие за текущей, 
+			continue;						//а предыдущие и равные текущей пропускаем
+		if (BestPos == CurWave.Position)	// если еще ничего не нашли,
+		{									// то берем первую попавшуюся волну
+			Ret = Waves[i];
 			BestPos = Waves[i].Position;
-			
-		if (Waves[i].Position < BestPos)
+		}
+		else if (Waves[i].Position < BestPos) // а дальше уже отсеиваем с наименьшим номером
+		{
+			Ret = Waves[i];
 			BestPos = Waves[i].Position;
+		}
 	}
-	return BestPos;
+	if (Ret==CurWave)
+		return none;
+
+	return Ret;
 }
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------

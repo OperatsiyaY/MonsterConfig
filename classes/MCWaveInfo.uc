@@ -30,10 +30,9 @@ static function array<string> GetNames()
 defaultproperties
 {
 	ConfigFile = "MonsterConfig"
-	
-	bUseZombieVolumeWaveDisabling = true
 	bMapSpecific=false
 	DelayBetweenSquads=3.0
 	MonstersTotal=70
 	MonstersMaxAtOnce=50
+	Position=-1
 }

@@ -41,4 +41,5 @@ defaultproperties
 	MonsterHeadHPMod = 1.00
 	MonsterSpeedMod = 1.00
 	MonsterDamageMod = 1.00
+	bUseZombieVolumeWaveDisabling = true
 }
