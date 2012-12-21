@@ -34,8 +34,8 @@ defaultproperties
 	DelayBetweenSquadsCoeff=1.0
 	MonstersTotalCoeff=1.0
 	MonstersMaxAtOnceCoeff=1.0
-	
-	PerPlayer=(DelayBetweenSquadsCoeff=0.85)
+
+	PerPlayer=(DelayBetweenSquadsCoeff=1.0)
 	
 	MonsterBodyHPMod = 1.00
 	MonsterHeadHPMod = 1.00

@@ -6,6 +6,7 @@
  * KFGameType.ZedSpawnList на наши MCZombieVolume
  *
  */
+
 class MonsterConfig extends Mutator
 	dependson(MCSquadInfo)
 	ParseConfig
@@ -28,7 +29,20 @@ var array<MCMonsterInfo>		Monsters;
 var array<MCSquadInfo>			Squads;
 var array<MCWaveInfo>			Waves;
 var MCMapInfo					MapInfo;
+
+// выключение стандартных киллсмесседж KillsMessageOff()
+var bool bKillsMessageReplace, bKillsMessageReplaceClient;
+//var MCKillMessageRoutines LMRoutine;
 //--------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
+simulated function PostNetReceive()
+{
+	if (bKillsMessageReplace != bKillsMessageReplaceClient)
+	{
+		bKillsMessageReplaceClient = bKillsMessageReplace;
+		KillsMessageOff();
+	}
+}
 //--------------------------------------------------------------------------------------------------
 function PostBeginPlay()
 {
@@ -73,7 +87,11 @@ function PostBeginPlay()
 	 * bWaveBossInProgress = True;
 	 */ 
 
-	MCGameType(GT).PostInit(Self);
+	bKillsMessageReplace = true;
+	KillsMessageOff();
+	//LMRoutine = spawn(class'MCKillMessageRoutines', self);
+
+	MCGameType(GT).PostInit(Self);	
 }
 //--------------------------------------------------------------------------------------------------
 function ReadConfig()
@@ -93,6 +111,11 @@ function ReadConfig()
 		tMonsterInfo = new(None, Names[i]) class'MCMonsterInfo';
 		if (tMonsterInfo.MonsterClass != none)
 		{
+			// для KillsMessage
+			tMonsterInfo.MNameObj = new(None, string(tMonsterInfo.Name)) class'MCMonsterNameObj';
+			tMonsterInfo.MNameObj.MonsterName  = tMonsterInfo.MonsterName;
+			tMonsterInfo.MNameObj.MonsterClass = tMonsterInfo.MonsterClass;
+			
 			Monsters.Insert(0,1);
 			Monsters[0] = tMonsterInfo;
 		}
@@ -146,6 +169,7 @@ function ReadConfig()
 					tWaveInfo.Position = FMax(GetLastWave().Position,0.f) + 0.1;
 					toLog("Wave:"@string(tWaveInfo.Name)@"Position not specified. Also no numbers in WaveName. So position will be"@tWaveInfo.Position@". Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
 				}
+				// TODO делать ли tWaveInfo.SaveConfig(), чтобы записать только что найденый Position?? Тогда из конфига удалятся невалидные сквады
 			}
 			while (bWavePositionAlreadyExist(tWaveInfo.Position))
 			{
@@ -185,6 +209,14 @@ function ReadConfig()
 			i--;
 			continue;
 		}
+		// если волна уже загружена. Эта проверка обязательно нужна. иначе при загрузке волны ниже,
+		// уже у загруженной волны может сбиться Position, установленный выше.
+		if (GetWave(tMapInfo.Waves[i]) != none)
+		{
+			tMapInfo.Waves.Remove(i,1);
+			i--;			
+			continue;
+		}
 		tWaveInfo = new(None, tMapInfo.Waves[i]) class'MCWaveInfo';
 		if (tWaveInfo.bMapSpecific==false) // обычная волна, она и так будет загружена
 		{
@@ -203,6 +235,7 @@ function ReadConfig()
 					tWaveInfo.Position = FMax(GetLastWave().Position,0.f) + 0.1;
 					toLog("Wave:"@string(tWaveInfo.Name)@"Position not specified. Also no numbers in WaveName. So position will be"@tWaveInfo.Position@". The wave is map-specific, and specified for map"@string(tMapInfo.Name)@". Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
 				}
+				// TODO делать ли tWaveInfo.SaveConfig(), чтобы записать только что найденый Position?? Тогда из конфига удалятся невалидные сквады
 			}
 			while (bWavePositionAlreadyExist(tWaveInfo.Position))
 			{
@@ -236,9 +269,16 @@ function MCWaveInfo GetLastWave()
 	local int i;
 	local MCWaveInfo Wave;
 	Wave = Waves[0];
+	toLog("GetLastWave() Best Wave:"@string(Wave.Name)@Wave.Position);
 	for (i=0;i<Waves.Length;i++)
+	{
+		toLog("GetLastWave() Check Wave:"@string(Waves[i].Name)@Waves[i].Position);	
 		if (Waves[i].Position > Wave.Position)
+		{
 			Wave = Waves[i];
+			toLog("GetLastWave() Best Wave:"@string(Wave.Name)@Wave.Position);
+		}
+	}
 	return Wave;
 }
 //--------------------------------------------------------------------------------------------------
@@ -247,9 +287,16 @@ function MCWaveInfo GetFirstWave()
 	local int i;
 	local MCWaveInfo Wave;
 	Wave = Waves[0];
+	toLog("GetFirstWave() Best Wave:"@string(Wave.Name)@Wave.Position);
 	for (i=0;i<Waves.Length;i++)
+	{
+		toLog("GetFirstWave() Check Wave:"@string(Waves[i].Name)@Waves[i].Position);	
 		if (Waves[i].Position < Wave.Position)
+		{
 			Wave = Waves[i];
+			toLog("GetFirstWave() Best Wave:"@string(Wave.Name)@Wave.Position);
+		}
+	}
 	return Wave;
 }
 //--------------------------------------------------------------------------------------------------
@@ -310,6 +357,13 @@ function MCMonsterInfo GetMonster(string MonsterName)
 //--------------------------------------------------------------------------------------------------
 function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
 {
+	if (KillsMessage(Other)!=none)
+	{
+		log("Replacing killsmessage");
+		ReplaceWith(Other, "MonsterConfig.MCKillsMessage");
+		return false;
+	}
+
 	// Замена ZombieVolumes на MCZombieVolume
 	if ( ZombieVolume(Other)!=none && MCZombieVolume(Other)==none )
 	{
@@ -524,6 +578,28 @@ function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
 	return Ret;
 }
 //--------------------------------------------------------------------------------------------------
+function MCWaveInfo GetWave(string W)
+{
+	local int i;
+	for (i=0;i<Waves.Length;i++)
+		if (string(Waves[i].Name)~=W)
+			return Waves[i];
+	return none;
+}
+//--------------------------------------------------------------------------------------------------
+function int GetWaveNum(MCWaveInfo Wave)
+{
+	local int i, num;
+	num = 1;
+	for (i=0;i<Waves.Length;i++)
+	{
+		if (Waves[i].Position < Wave.Position)
+			num++;
+	}
+	toLog("GetWaveNum->Wave"@string(Wave.Name)@"WaveNum is"@num);
+	return num;
+}
+//--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 function float GetNumPlayers(optional bool bOnlyAlive, optional bool bNotCountFaked)
 {
@@ -556,10 +632,21 @@ simulated function Timer()
 	SetTimer(15,false);
 }
 //--------------------------------------------------------------------------------------------------
+simulated function KillsMessageOff()
+{
+	local PlayerController PC;
+	local HudKillingFloor H;
+	PC = Level.GetLocalPlayerController();
+ 	H = HudKillingFloor(PC.myHud);
+    H.bTallySpecimenKills = false;
+}
+//--------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
 defaultproperties
 {
 	bAlwaysRelevant = true
 	RemoteRole = ROLE_SimulatedProxy
+	bNetNotify = true
 	
 	FakedPlayersNum = 0
 	MonstersTotalMod = 1.00

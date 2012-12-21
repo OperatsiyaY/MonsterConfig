@@ -1,73 +1,70 @@
 class MCGameType extends KFGameType;
 
-//#exec obj load file="MCKillsMessage.u" Package="MonsterConfig"
+#exec obj load file="MCKillsMessage.u" Package="MonsterConfig"
 
 struct AliveMonsterInfo
 {
 	var KFMonster		Mon;
-	var Name			MonName;
 	var MCMonsterInfo	MonType;
 };
 
-var bool					bReady; // флаг выставляется в PostInit(),
-									// который вызывается SandboxController.PostBeginPlay()
+var bool					bReady; // С„Р»Р°Рі РІС‹СЃС‚Р°РІР»СЏРµС‚СЃСЏ РІ PostInit(),
+									// РєРѕС‚РѕСЂС‹Р№ РІС‹Р·С‹РІР°РµС‚СЃСЏ SandboxController.PostBeginPlay()
 
 var MonsterConfig			SandboxController;
-var MCWaveInfo				CurWaveInfo; // инфо о текущей волне
-var array<MCSquadInfo>		Squads, SpecSquads;// сквады для текущей волны
-var array<MCSquadInfo>		SquadsToPick;	 // рабочий массив отрядов из него дергаем рандомно
-var array<MCMonsterInfo>	SquadToSpawn; // текущий отряд (массив MonsterInfo)
-var MCSquadInfo				CurrentSquad; // текущий отряд
-var array<AliveMonsterInfo> AliveMonsters;	// для сопоставления с MonsterInfo в ReduceDamage
-var array<AliveMonsterInfo>	DeadMonsters; // т.к. ScoreKill вызывается после Killed
-											// то AliveMonsters должнны удаляться в следующем тике
-											// поэтому заполняем DeadMonsters и удаляем их из AliveMonsters
-											// в след.тике
+var MCWaveInfo				CurWaveInfo; // РёРЅС„Рѕ Рѕ С‚РµРєСѓС‰РµР№ РІРѕР»РЅРµ
+var array<MCSquadInfo>		Squads, SpecSquads;// СЃРєРІР°РґС‹ РґР»СЏ С‚РµРєСѓС‰РµР№ РІРѕР»РЅС‹
+var array<MCSquadInfo>		SquadsToPick;	 // СЂР°Р±РѕС‡РёР№ РјР°СЃСЃРёРІ РѕС‚СЂСЏРґРѕРІ РёР· РЅРµРіРѕ РґРµСЂРіР°РµРј СЂР°РЅРґРѕРјРЅРѕ
+var array<MCMonsterInfo>	SquadToSpawn; // С‚РµРєСѓС‰РёР№ РѕС‚СЂСЏРґ (РјР°СЃСЃРёРІ MonsterInfo)
+var MCSquadInfo				CurrentSquad; // С‚РµРєСѓС‰РёР№ РѕС‚СЂСЏРґ
+var array<AliveMonsterInfo> AliveMonsters;	// РґР»СЏ СЃРѕРїРѕСЃС‚Р°РІР»РµРЅРёСЏ СЃ MonsterInfo РІ ReduceDamage
+var array<KFMonster>		DeadMonsters;
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 // Disabled
 
-// Вызывается auto State PendingMatch->Begin->DetermineEvent()->NotifyGameEvent( )
-// исходя из Event'а выставляет нужный MonsterCollection и вызывает LoadUpMonsterList()
+// Р’С‹Р·С‹РІР°РµС‚СЃСЏ auto State PendingMatch->Begin->DetermineEvent()->NotifyGameEvent( )
+// РёСЃС…РѕРґСЏ РёР· Event'Р° РІС‹СЃС‚Р°РІР»СЏРµС‚ РЅСѓР¶РЅС‹Р№ MonsterCollection Рё РІС‹Р·С‹РІР°РµС‚ LoadUpMonsterList()
 function NotifyGameEvent(int EventNumIn);
 
-// Вызывается из InitGame и из NotifyGameEvent (второй раз). Нам не нужен.
+// Р’С‹Р·С‹РІР°РµС‚СЃСЏ РёР· InitGame Рё РёР· NotifyGameEvent (РІС‚РѕСЂРѕР№ СЂР°Р·). РќР°Рј РЅРµ РЅСѓР¶РµРЅ.
 function LoadUpMonsterList();	
-function PrepareSpecialSquads(); // заменена на нашу PrepareSpecSquads()
+function PrepareSpecialSquads(); // Р·Р°РјРµРЅРµРЅР° РЅР° РЅР°С€Сѓ PrepareSpecSquads()
 function UpdateGameLength();
 function BuildNextSquad();
 function AddSpecialSquad();
 //--------------------------------------------------------------------------------------------------
 // TODO
-// что делать с NumMonsters 
-// что делать с InitialWave -> Timer (if ( WaveNum != InitialWave && !bTradingDoorsOpen ))
+// С‡С‚Рѕ РґРµР»Р°С‚СЊ СЃ NumMonsters 
+// С‡С‚Рѕ РґРµР»Р°С‚СЊ СЃ InitialWave -> Timer (if ( WaveNum != InitialWave && !bTradingDoorsOpen ))
 // Timer -> KFGameReplicationInfo(GameReplicationInfo).TimeToNextWave = WaveCountDown;
-// что делать с флагом bUserEndGameBoss -> if( WaveNum == FinalWave && bUseEndGameBoss )
+// С‡С‚Рѕ РґРµР»Р°С‚СЊ СЃ С„Р»Р°РіРѕРј bUserEndGameBoss -> if( WaveNum == FinalWave && bUseEndGameBoss )
 
-// работа KFGameType с WaveNum:
+// СЂР°Р±РѕС‚Р° KFGameType СЃ WaveNum:
 // MatchInProgress -> BeginState() -> WaveNum = InitialWave
 // 						DoWaveEnd()  ->   WaveNum++;
 // InvasionGameReplicationInfo(GameReplicationInfo).WaveNumber = WaveNum;
 
-// спавн Босса
-// смотреть функцию function StartWaveBoss()
+// СЃРїР°РІРЅ Р‘РѕСЃСЃР°
+// СЃРјРѕС‚СЂРµС‚СЊ С„СѓРЅРєС†РёСЋ function StartWaveBoss()
 // NextSpawnSquad.Length = 1;
 // TotalMaxMonsters = 1;
 // bWaveBossInProgress = True;
 //--------------------------------------------------------------------------------------------------
 function ScoreKill(Controller Killer, Controller Other)
 {
+//	local PlayerController PC;
+//	local int i,n;
+//	local HudBase H;
 	local Controller C;
+	
 	local KFMonster M;
 	local MCMonsterInfo MI;
+	//local MCMonsterNameObj MObj;
 	
 	M = KFMonster(Other.Pawn);
 	if (M!=none)
 		MI = GetAliveMonsterInfo(M);
-	if (MI==none)
-	{
-		toLog("ScoreKill->Failed to load Monster info with GetAliveMonsterInfo");
-	}
 	if (MI!=none)
 	{
 		//MObj = new (None, "monobj") class'MCMonsterNameObj';
@@ -80,17 +77,11 @@ function ScoreKill(Controller Killer, Controller Other)
 		{
 			for( C=Level.ControllerList; C!=None; C=C.nextController )
                 if( C.bIsPlayer && xPlayer(C)!=None )
-				{
-					toLog("ScoreKill->KillMessage for"@MI.MNameObj.MonsterName);
                     xPlayer(C).ReceiveLocalizedMessage(Class'MCKillsMessage',1,Killer.PlayerReplicationInfo,Other.Pawn.PlayerReplicationInfo,MI.MNameObj);
-				}
         }
 		else
             if( xPlayer(Killer)!=None )
-			{
-				toLog("ScoreKill->KillMessage for"@MI.MNameObj.MonsterName);
                 xPlayer(Killer).ReceiveLocalizedMessage(Class'MCKillsMessage',,,Other.Pawn.PlayerReplicationInfo,MI.MNameObj);
-			}
 		/* End Marco's Kill Messages */
 		//Level.ObjectPool.FreeObject(MObj);
 	}
@@ -141,13 +132,13 @@ event InitGame( string Options, out string Error )
     bCustomGameLength = true;
 }
 //--------------------------------------------------------------------------------------------------
- // Вызывается в SandboxController.PostBeginPlay()
+ // Р’С‹Р·С‹РІР°РµС‚СЃСЏ РІ SandboxController.PostBeginPlay()
 function PostInit(MonsterConfig Sender)
 {
 	toLog("PostInit");
 	SandboxController = Sender;
 	
-	// Инициализация	
+	// РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ	
 	FinalWave = SandboxController.Waves.Length;
 	toLog("PostInit->FinalWave:"@FinalWave);
 
@@ -158,25 +149,25 @@ function SetupWave()
 {
 	local int i,j;
 	toLog("SetupWave");
-	TraderProblemLevel = 0; // Для дебага выкидывания игроков из магаза
-	ZombiesKilled = 0; // Мобы убитые за волну
-	WaveMonsters = 0; // Мобы, заспавненные за волну
-//	rewardFlag = false; // выдавать ли деньги за победу, команде
-//	WaveNumClasses = 0; // количество классов для спавна рандомного моба, функция AddMonster
-//	TotalMaxMonsters - задаём в своей функции
-//	MaxMonsters - задаём в своей функции
-	WaveEndTime = Level.TimeSeconds + 255; // очень странная переменная, непонятно на что влияет
-	AdjustedDifficulty = GameDifficulty; // Ни на что не влияет
+	TraderProblemLevel = 0; // Р”Р»СЏ РґРµР±Р°РіР° РІС‹РєРёРґС‹РІР°РЅРёСЏ РёРіСЂРѕРєРѕРІ РёР· РјР°РіР°Р·Р°
+	ZombiesKilled = 0; // РњРѕР±С‹ СѓР±РёС‚С‹Рµ Р·Р° РІРѕР»РЅСѓ
+	WaveMonsters = 0; // РњРѕР±С‹, Р·Р°СЃРїР°РІРЅРµРЅРЅС‹Рµ Р·Р° РІРѕР»РЅСѓ
+//	rewardFlag = false; // РІС‹РґР°РІР°С‚СЊ Р»Рё РґРµРЅСЊРіРё Р·Р° РїРѕР±РµРґСѓ, РєРѕРјР°РЅРґРµ
+//	WaveNumClasses = 0; // РєРѕР»РёС‡РµСЃС‚РІРѕ РєР»Р°СЃСЃРѕРІ РґР»СЏ СЃРїР°РІРЅР° СЂР°РЅРґРѕРјРЅРѕРіРѕ РјРѕР±Р°, С„СѓРЅРєС†РёСЏ AddMonster
+//	TotalMaxMonsters - Р·Р°РґР°С‘Рј РІ СЃРІРѕРµР№ С„СѓРЅРєС†РёРё
+//	MaxMonsters - Р·Р°РґР°С‘Рј РІ СЃРІРѕРµР№ С„СѓРЅРєС†РёРё
+	WaveEndTime = Level.TimeSeconds + 255; // РѕС‡РµРЅСЊ СЃС‚СЂР°РЅРЅР°СЏ РїРµСЂРµРјРµРЅРЅР°СЏ, РЅРµРїРѕРЅСЏС‚РЅРѕ РЅР° С‡С‚Рѕ РІР»РёСЏРµС‚
+	AdjustedDifficulty = GameDifficulty; // РќРё РЅР° С‡С‚Рѕ РЅРµ РІР»РёСЏРµС‚
 	
 	j = ZedSpawnList.Length;
 	for( i=0; i<j; i++ )
 		ZedSpawnList[i].Reset();
 	
 	MCSetupWave();
-	// BuildNextSquad(); // Будет вызываться в AddSquad() Трипы ламеры, он тут не нужен
+	// BuildNextSquad(); // Р‘СѓРґРµС‚ РІС‹Р·С‹РІР°С‚СЊСЃСЏ РІ AddSquad() РўСЂРёРїС‹ Р»Р°РјРµСЂС‹, РѕРЅ С‚СѓС‚ РЅРµ РЅСѓР¶РµРЅ
 }
 //--------------------------------------------------------------------------------------------------
-// Определяем номер волны относительно других
+// РћРїСЂРµРґРµР»СЏРµРј РЅРѕРјРµСЂ РІРѕР»РЅС‹ РѕС‚РЅРѕСЃРёС‚РµР»СЊРЅРѕ РґСЂСѓРіРёС…
 function int GetWaveNum(MCWaveInfo Wave)
 {
 	return SandboxController.GetWaveNum(Wave);
@@ -188,8 +179,8 @@ function MCSetupWave()
 	toLog("MCSetupWave");
 
 	// TODO
-	// определять свой диффикалти, для таблицы (можно кустом в тру выставить при инит)
-	// если сквад заспавнился не полностью, некст спавн тайм обнулять и обновлять только после полногоспавна
+	// РѕРїСЂРµРґРµР»СЏС‚СЊ СЃРІРѕР№ РґРёС„С„РёРєР°Р»С‚Рё, РґР»СЏ С‚Р°Р±Р»РёС†С‹ (РјРѕР¶РЅРѕ РєСѓСЃС‚РѕРј РІ С‚СЂСѓ РІС‹СЃС‚Р°РІРёС‚СЊ РїСЂРё РёРЅРёС‚)
+	// РµСЃР»Рё СЃРєРІР°Рґ Р·Р°СЃРїР°РІРЅРёР»СЃСЏ РЅРµ РїРѕР»РЅРѕСЃС‚СЊСЋ, РЅРµРєСЃС‚ СЃРїР°РІРЅ С‚Р°Р№Рј РѕР±РЅСѓР»СЏС‚СЊ Рё РѕР±РЅРѕРІР»СЏС‚СЊ С‚РѕР»СЊРєРѕ РїРѕСЃР»Рµ РїРѕР»РЅРѕРіРѕСЃРїР°РІРЅР°
 	CurWaveInfo = GetNextWaveInfo(CurWaveInfo);
 	toLog("MCSetupWave->CurWaveInfo:"@string(CurWaveInfo.Name));
 	
@@ -206,13 +197,13 @@ function MCSetupWave()
 	toLog("MCSetupWave->PlayersCount="@PlayersCount);
 	
 	
-	// количество монстров за волну
+	// РєРѕР»РёС‡РµСЃС‚РІРѕ РјРѕРЅСЃС‚СЂРѕРІ Р·Р° РІРѕР»РЅСѓ
 	TotalMaxMonsters	= SandboxController.MonstersTotalMod * SandboxController.MapInfo.MonstersTotalCoeff
 						* ( CurWaveInfo.MonstersTotal + CurWaveInfo.PerPlayer.MonstersTotal * (PlayersCount - 1) );
 	toLog("MCSetupWave->TotalMaxMonsters:"@TotalMaxMonsters);
 	
 	
-	// Мобы, одновременно находящиеся на карте
+	// РњРѕР±С‹, РѕРґРЅРѕРІСЂРµРјРµРЅРЅРѕ РЅР°С…РѕРґСЏС‰РёРµСЃСЏ РЅР° РєР°СЂС‚Рµ
 	MaxMonsters	= SandboxController.MonstersMaxAtOnceMod * SandboxController.MapInfo.MonstersMaxAtOnceCoeff
 				* ( CurWaveInfo.MonstersMaxAtOnce + CurWaveInfo.PerPlayer.MonstersMaxAtOnce * (PlayersCount - 1) );
 	toLog("MCSetupWave->MaxMonsters:"@MaxMonsters);
@@ -220,13 +211,13 @@ function MCSetupWave()
 	KFGameReplicationInfo(Level.Game.GameReplicationInfo).MaxMonsters = TotalMaxMonsters;
 	KFGameReplicationInfo(Level.Game.GameReplicationInfo).MaxMonstersOn = true;
 
-	// формируем отряды на текущую волну
+	// С„РѕСЂРјРёСЂСѓРµРј РѕС‚СЂСЏРґС‹ РЅР° С‚РµРєСѓС‰СѓСЋ РІРѕР»РЅСѓ
 	PrepareSquads();
 	PrepareSpecSquads();
 	// SquadsToPickFill();
 }
 //--------------------------------------------------------------------------------------------------
-// вызываем при MCSetupWave() - заполняет массив Squads - сквадами на волну
+// РІС‹Р·С‹РІР°РµРј РїСЂРё MCSetupWave() - Р·Р°РїРѕР»РЅСЏРµС‚ РјР°СЃСЃРёРІ Squads - СЃРєРІР°РґР°РјРё РЅР° РІРѕР»РЅСѓ
 function PrepareSquads()
 {
 	local int i,n;
@@ -242,7 +233,7 @@ function PrepareSquads()
 	toLog("PrepareSquads()->Squads count:"@Squads.Length);
 }
 //--------------------------------------------------------------------------------------------------
-// вызываем при MCSetupWave() - заполняет массив SpecSquads - спец.сквадами на волну
+// РІС‹Р·С‹РІР°РµРј РїСЂРё MCSetupWave() - Р·Р°РїРѕР»РЅСЏРµС‚ РјР°СЃСЃРёРІ SpecSquads - СЃРїРµС†.СЃРєРІР°РґР°РјРё РЅР° РІРѕР»РЅСѓ
 function PrepareSpecSquads()
 {
 	local int i,n;
@@ -294,15 +285,15 @@ function bool AddSquad()
 	{
 		toLog("AddSquad()-> No ZombieVolume's found. So just return.");
 		
-		// исключаем пропуск SpecialSquad'ов из-за временных проблем со спавном
+		// РёСЃРєР»СЋС‡Р°РµРј РїСЂРѕРїСѓСЃРє SpecialSquad'РѕРІ РёР·-Р·Р° РІСЂРµРјРµРЅРЅС‹С… РїСЂРѕР±Р»РµРј СЃРѕ СЃРїР°РІРЅРѕРј
 		if (!CurrentSquad.bSpecialSquad) 
 		{
 			SquadToSpawn.Remove(0,SquadToSpawn.Length);
-			// TODO хак, чтобы не переписывать ВЕСЬ ТАЙМЕР!!!! так как в нем идет проверка 
-			// на nextSpawnSquad.Length если отрят не смог заспавниться полностью, то NextSpawnTime ставится +0.1
-			// и остальные мобы спавнятся почти сразу, а не через стандартные CalcNextSquadSpawnTime();
-			// можно наш массив SquadToSpawn обозвать по ихнему, но компилятор будет каждый раз ругаться
-			// на обфускацию
+			// TODO С…Р°Рє, С‡С‚РѕР±С‹ РЅРµ РїРµСЂРµРїРёСЃС‹РІР°С‚СЊ Р’Р•РЎР¬ РўРђР™РњР•Р !!!! С‚Р°Рє РєР°Рє РІ РЅРµРј РёРґРµС‚ РїСЂРѕРІРµСЂРєР° 
+			// РЅР° nextSpawnSquad.Length РµСЃР»Рё РѕС‚СЂСЏС‚ РЅРµ СЃРјРѕРі Р·Р°СЃРїР°РІРЅРёС‚СЊСЃСЏ РїРѕР»РЅРѕСЃС‚СЊСЋ, С‚Рѕ NextSpawnTime СЃС‚Р°РІРёС‚СЃСЏ +0.1
+			// Рё РѕСЃС‚Р°Р»СЊРЅС‹Рµ РјРѕР±С‹ СЃРїР°РІРЅСЏС‚СЃСЏ РїРѕС‡С‚Рё СЃСЂР°Р·Сѓ, Р° РЅРµ С‡РµСЂРµР· СЃС‚Р°РЅРґР°СЂС‚РЅС‹Рµ CalcNextSquadSpawnTime();
+			// РјРѕР¶РЅРѕ РЅР°С€ РјР°СЃСЃРёРІ SquadToSpawn РѕР±РѕР·РІР°С‚СЊ РїРѕ РёС…РЅРµРјСѓ, РЅРѕ РєРѕРјРїРёР»СЏС‚РѕСЂ Р±СѓРґРµС‚ РєР°Р¶РґС‹Р№ СЂР°Р· СЂСѓРіР°С‚СЊСЃСЏ
+			// РЅР° РѕР±С„СѓСЃРєР°С†РёСЋ
 			nextSpawnSquad.Length = SquadToSpawn.Length;
 		}
 
@@ -314,32 +305,32 @@ function bool AddSquad()
 	toLog("AddSquad()->We can spawn only ZombiesAtOnceLeft:"@ZombiesAtOnceLeft@"(MaxMonsters:"@MaxMonsters@"NumMonsters:"@NumMonsters@")");
 	
 	if( MCZombieVolume(LastZVol).MCSpawnInHere(
-		SquadToSpawn,		// out массив MCMonsterInfo для спавна
-		,					// bTest если true лишь возвращает возможность заспавнить монстров тут
-		numspawned,			// out int возвращает количество заспавленых монстров
+		SquadToSpawn,		// out РјР°СЃСЃРёРІ MCMonsterInfo РґР»СЏ СЃРїР°РІРЅР°
+		,					// bTest РµСЃР»Рё true Р»РёС€СЊ РІРѕР·РІСЂР°С‰Р°РµС‚ РІРѕР·РјРѕР¶РЅРѕСЃС‚СЊ Р·Р°СЃРїР°РІРЅРёС‚СЊ РјРѕРЅСЃС‚СЂРѕРІ С‚СѓС‚
+		numspawned,			// out int РІРѕР·РІСЂР°С‰Р°РµС‚ РєРѕР»РёС‡РµСЃС‚РІРѕ Р·Р°СЃРїР°РІР»РµРЅС‹С… РјРѕРЅСЃС‚СЂРѕРІ
 		TotalMaxMonsters,	// out TotalMaxMonsters
 		ZombiesAtOnceLeft,	// int MaxMonstersAtOnceLeft
 		TotalZombiesValue,	// out int TotalZombiesValue
-		false) )			// bTryAllSpawns - если false, делает только 3 попытки спавна,
-							// если true - пытается заспавнить во всех SpawnPoints волума
-							// TODO - ставить тут true?
+		false) )			// bTryAllSpawns - РµСЃР»Рё false, РґРµР»Р°РµС‚ С‚РѕР»СЊРєРѕ 3 РїРѕРїС‹С‚РєРё СЃРїР°РІРЅР°,
+							// РµСЃР»Рё true - РїС‹С‚Р°РµС‚СЃСЏ Р·Р°СЃРїР°РІРЅРёС‚СЊ РІРѕ РІСЃРµС… SpawnPoints РІРѕР»СѓРјР°
+							// TODO - СЃС‚Р°РІРёС‚СЊ С‚СѓС‚ true?
 	{
 		toLog("AddSquad()->ZombiesSpawned:"@numspawned);
     	NumMonsters += numspawned;
     	WaveMonsters+= numspawned;
 
-		// перенесено внутрь MCSpawnInHere - там мы удаляем именно тех, кого получилось заспавнить,
-		// а не первых numspawned в массиве
+		// РїРµСЂРµРЅРµСЃРµРЅРѕ РІРЅСѓС‚СЂСЊ MCSpawnInHere - С‚Р°Рј РјС‹ СѓРґР°Р»СЏРµРј РёРјРµРЅРЅРѕ С‚РµС…, РєРѕРіРѕ РїРѕР»СѓС‡РёР»РѕСЃСЊ Р·Р°СЃРїР°РІРЅРёС‚СЊ,
+		// Р° РЅРµ РїРµСЂРІС‹С… numspawned РІ РјР°СЃСЃРёРІРµ
 		// SquadToSpawn.Remove(0, numspawned);
 		
-		// TODO хак, чтобы не переписывать ВЕСЬ ТАЙМЕР!!!! так как в нем идет проверка 
-		// на nextSpawnSquad.Length если отрят не смог заспавниться полностью, то NextSpawnTime ставится +0.1
-		// и остальные мобы спавнятся почти сразу, а не через стандартные CalcNextSquadSpawnTime();
-		// можно наш массив SquadToSpawn обозвать по ихнему, но компилятор будет каждый раз ругаться
-		// на обфускацию
+		// TODO С…Р°Рє, С‡С‚РѕР±С‹ РЅРµ РїРµСЂРµРїРёСЃС‹РІР°С‚СЊ Р’Р•РЎР¬ РўРђР™РњР•Р !!!! С‚Р°Рє РєР°Рє РІ РЅРµРј РёРґРµС‚ РїСЂРѕРІРµСЂРєР° 
+		// РЅР° nextSpawnSquad.Length РµСЃР»Рё РѕС‚СЂСЏС‚ РЅРµ СЃРјРѕРі Р·Р°СЃРїР°РІРЅРёС‚СЊСЃСЏ РїРѕР»РЅРѕСЃС‚СЊСЋ, С‚Рѕ NextSpawnTime СЃС‚Р°РІРёС‚СЃСЏ +0.1
+		// Рё РѕСЃС‚Р°Р»СЊРЅС‹Рµ РјРѕР±С‹ СЃРїР°РІРЅСЏС‚СЃСЏ РїРѕС‡С‚Рё СЃСЂР°Р·Сѓ, Р° РЅРµ С‡РµСЂРµР· СЃС‚Р°РЅРґР°СЂС‚РЅС‹Рµ CalcNextSquadSpawnTime();
+		// РјРѕР¶РЅРѕ РЅР°С€ РјР°СЃСЃРёРІ SquadToSpawn РѕР±РѕР·РІР°С‚СЊ РїРѕ РёС…РЅРµРјСѓ, РЅРѕ РєРѕРјРїРёР»СЏС‚РѕСЂ Р±СѓРґРµС‚ РєР°Р¶РґС‹Р№ СЂР°Р· СЂСѓРіР°С‚СЊСЃСЏ
+		// РЅР° РѕР±С„СѓСЃРєР°С†РёСЋ
 		nextSpawnSquad.Length = SquadToSpawn.Length;
 
-		// обновляем counter'ы для SpecSquads
+		// РѕР±РЅРѕРІР»СЏРµРј counter'С‹ РґР»СЏ SpecSquads
 		n = SpecSquads.Length;
 		for(i=0; i<n; i++)
 			SpecSquads[i].Counter += numspawned;
@@ -372,7 +363,7 @@ function MCSquadInfo GetSpecialSquad()
 	return none;
 }
 //--------------------------------------------------------------------------------------------------
-// выдергиваем рандомно CurrentSquad  из SquadsToPick
+// РІС‹РґРµСЂРіРёРІР°РµРј СЂР°РЅРґРѕРјРЅРѕ CurrentSquad  РёР· SquadsToPick
 function MCSquadInfo GetRandomSquad()
 {
 	local int n;
@@ -388,7 +379,7 @@ function MCSquadInfo GetRandomSquad()
 	return Ret;
 }
 //--------------------------------------------------------------------------------------------------
-// заполняем массив SquadsToPick, из которого будем дёргать CurrentSquad'ы
+// Р·Р°РїРѕР»РЅСЏРµРј РјР°СЃСЃРёРІ SquadsToPick, РёР· РєРѕС‚РѕСЂРѕРіРѕ Р±СѓРґРµРј РґС‘СЂРіР°С‚СЊ CurrentSquad'С‹
 function SquadsToPickFill()
 {
 	local int i;
@@ -427,11 +418,11 @@ function bool SquadToMonsters(MCSquadInfo CurSquad, out array<MCMonsterInfo> Ret
 	}
 	toLog("SquadToMonsters()->Returning"@Ret.Length@"monsters");	
 	
-	// TODO хак, чтобы не переписывать ВЕСЬ ТАЙМЕР!!!! так как в нем идет проверка 
-	// на nextSpawnSquad.Length если отрят не смог заспавниться полностью, то NextSpawnTime ставится +0.1
-	// и остальные мобы спавнятся почти сразу, а не через стандартные CalcNextSquadSpawnTime();
-	// можно наш массив SquadToSpawn обозвать по ихнему, но компилятор будет каждый раз ругаться
-	// на обфускацию
+	// TODO С…Р°Рє, С‡С‚РѕР±С‹ РЅРµ РїРµСЂРµРїРёСЃС‹РІР°С‚СЊ Р’Р•РЎР¬ РўРђР™РњР•Р !!!! С‚Р°Рє РєР°Рє РІ РЅРµРј РёРґРµС‚ РїСЂРѕРІРµСЂРєР° 
+	// РЅР° nextSpawnSquad.Length РµСЃР»Рё РѕС‚СЂСЏС‚ РЅРµ СЃРјРѕРі Р·Р°СЃРїР°РІРЅРёС‚СЊСЃСЏ РїРѕР»РЅРѕСЃС‚СЊСЋ, С‚Рѕ NextSpawnTime СЃС‚Р°РІРёС‚СЃСЏ +0.1
+	// Рё РѕСЃС‚Р°Р»СЊРЅС‹Рµ РјРѕР±С‹ СЃРїР°РІРЅСЏС‚СЃСЏ РїРѕС‡С‚Рё СЃСЂР°Р·Сѓ, Р° РЅРµ С‡РµСЂРµР· СЃС‚Р°РЅРґР°СЂС‚РЅС‹Рµ CalcNextSquadSpawnTime();
+	// РјРѕР¶РЅРѕ РЅР°С€ РјР°СЃСЃРёРІ SquadToSpawn РѕР±РѕР·РІР°С‚СЊ РїРѕ РёС…РЅРµРјСѓ, РЅРѕ РєРѕРјРїРёР»СЏС‚РѕСЂ Р±СѓРґРµС‚ РєР°Р¶РґС‹Р№ СЂР°Р· СЂСѓРіР°С‚СЊСЃСЏ
+	// РЅР° РѕР±С„СѓСЃРєР°С†РёСЋ
 	nextSpawnSquad.Length = SquadToSpawn.Length;
 	
 	return true;
@@ -443,8 +434,8 @@ function bool SquadToMonsters(MCSquadInfo CurSquad, out array<MCMonsterInfo> Ret
 state MatchInProgress
 {
 
-	// определяем через какое время спавнить монстров
-	// Функция используется в Timer'е: 
+	// РѕРїСЂРµРґРµР»СЏРµРј С‡РµСЂРµР· РєР°РєРѕРµ РІСЂРµРјСЏ СЃРїР°РІРЅРёС‚СЊ РјРѕРЅСЃС‚СЂРѕРІ
+	// Р¤СѓРЅРєС†РёСЏ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІ Timer'Рµ: 
 	// NextMonsterTime = Level.TimeSeconds + CalcNextSquadSpawnTime();
 	function float CalcNextSquadSpawnTime()
 	{
@@ -471,17 +462,17 @@ state MatchInProgress
 		return NextSpawnTime;
 	}
 	//--------------------------------------------------------------------------------------------------
-	// активизация/выключение волумов в зависимости от номера волны (используется строителями карт)
+	// Р°РєС‚РёРІРёР·Р°С†РёСЏ/РІС‹РєР»СЋС‡РµРЅРёРµ РІРѕР»СѓРјРѕРІ РІ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РѕС‚ РЅРѕРјРµСЂР° РІРѕР»РЅС‹ (РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ СЃС‚СЂРѕРёС‚РµР»СЏРјРё РєР°СЂС‚)
 	function InitMapWaveCfg()
 	{
 		local int i,l;
 
-		// используем стандартные настройки волумов
+		// РёСЃРїРѕР»СЊР·СѓРµРј СЃС‚Р°РЅРґР°СЂС‚РЅС‹Рµ РЅР°СЃС‚СЂРѕР№РєРё РІРѕР»СѓРјРѕРІ
 		if ( SandboxController.MapInfo.bUseZombieVolumeWaveDisabling ) 
 		{
 			Super.InitMapWaveCfg();
 		}
-		else // если нет, то включаем все волумы
+		else // РµСЃР»Рё РЅРµС‚, С‚Рѕ РІРєР»СЋС‡Р°РµРј РІСЃРµ РІРѕР»СѓРјС‹
 		{
 			l = ZedSpawnList.Length;
 			for( i=0; i<l; i++ )
@@ -496,14 +487,14 @@ state MatchInProgress
 	}
 }
 //--------------------------------------------------------------------------------------------------
-// Достаёт из массива следующую за текущей волну, если текущая волна последняя, возвращает none
-// используется в MCSetupWave:  CurWaveInfo = GetNextWaveInfo(CurWaveInfo);
+// Р”РѕСЃС‚Р°С‘С‚ РёР· РјР°СЃСЃРёРІР° СЃР»РµРґСѓСЋС‰СѓСЋ Р·Р° С‚РµРєСѓС‰РµР№ РІРѕР»РЅСѓ, РµСЃР»Рё С‚РµРєСѓС‰Р°СЏ РІРѕР»РЅР° РїРѕСЃР»РµРґРЅСЏСЏ, РІРѕР·РІСЂР°С‰Р°РµС‚ none
+// РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІ MCSetupWave:  CurWaveInfo = GetNextWaveInfo(CurWaveInfo);
 function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
 {
 	return SandboxController.GetNextWaveInfo(CurWave);
 }
 //--------------------------------------------------------------------------------------------------
-// Считает коэффициент дамага монстру исходя из MonsterInfo->Resist
+// РЎС‡РёС‚Р°РµС‚ РєРѕСЌС„С„РёС†РёРµРЅС‚ РґР°РјР°РіР° РјРѕРЅСЃС‚СЂСѓ РёСЃС…РѕРґСЏ РёР· MonsterInfo->Resist
 function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector HitLocation, out vector Momentum, class<DamageType> DamageType)
 {
 	local int index,i,n;
@@ -535,45 +526,27 @@ function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector Hi
 	return Super.ReduceDamage(Damage,injured,instigatedBy,HitLocation,Momentum,DamageType);
 }
 //--------------------------------------------------------------------------------------------------
-// Заполняем массив AliveMonsters, для сопоставления Monster и его MonsterInfo (для ReduceDamage)
+// Р—Р°РїРѕР»РЅСЏРµРј РјР°СЃСЃРёРІ AliveMonsters, РґР»СЏ СЃРѕРїРѕСЃС‚Р°РІР»РµРЅРёСЏ Monster Рё РµРіРѕ MonsterInfo (РґР»СЏ ReduceDamage)
 function NotifyMonsterSpawn(KFMonster Mon, MCMonsterInfo MonInfo)
 {
 	toLog("NotifyMonsterSpawn()"@string(MonInfo.Name));
 	AliveMonsters.Insert(0,1);
 	AliveMonsters[0].Mon = Mon;
-	AliveMonsters[0].MonName = Mon.Name;
 	AliveMonsters[0].MonType = MonInfo;
 }
 //--------------------------------------------------------------------------------------------------
 function Killed(Controller Killer, Controller Killed, Pawn KilledPawn, class<DamageType> damageType)
 {
+	local int i;
 	local KFMonster M;
 	M = KFMonster(KilledPawn);
 	if (M!=none)
 	{
-		toLog("Killed->Monster:"@GetAliveMonsterInfo(M).MonsterName);
-		DeadMonsters.Insert(0,1);
-		DeadMonsters[0].Mon = M;
-		DeadMonsters[0].MonName = M.Name;
+		i = GetAliveMonsterIndex(M);
+		if ( i != -1 )
+			AliveMonsters.Remove(i,1);
 	}
 	Super.Killed(Killer,Killed,KilledPawn,damageType);
-}
-//--------------------------------------------------------------------------------------------------
-function Tick( float dt )
-{
-	local int i,j;
-	Super.Tick(dt);
-
-	for (i=0;i<DeadMonsters.Length;i++)
-	{
-		j = GetAliveMonsterIndex(DeadMonsters[i]);
-		if ( j != -1 )
-		{
-			toLog("Tick->Clearing AliveMonsters for Monster:"@GetAliveMonsterInfo(DeadMonsters[i]).MonsterName);
-			AliveMonsters.Remove(i,1);
-		}
-		DeadMonsters.Remove(i,1);
-	}
 }
 //--------------------------------------------------------------------------------------------------
 function MCMonsterInfo GetAliveMonsterInfo(KFMonster M)
@@ -586,14 +559,13 @@ function MCMonsterInfo GetAliveMonsterInfo(KFMonster M)
 	return none;
 }
 //--------------------------------------------------------------------------------------------------
-// Используется в ReduceDamage для сопоставления Монстра к его MonsterInfo (нужны коэффициенты)
-function int GetAliveMonsterIndex(AliveMonsterInfo M)
+// РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІ ReduceDamage РґР»СЏ СЃРѕРїРѕСЃС‚Р°РІР»РµРЅРёСЏ РњРѕРЅСЃС‚СЂР° Рє РµРіРѕ MonsterInfo (РЅСѓР¶РЅС‹ РєРѕСЌС„С„РёС†РёРµРЅС‚С‹)
+function int GetAliveMonsterIndex(KFMonster M)
 {
 	local int i,n;
 	n = AliveMonsters.Length;
 	for(i=0; i<n; i++)
-		if( AliveMonsters[i].Mon == M.Mon
-			|| AliveMonsters[i].MonName == M.MonName )
+		if ( AliveMonsters[i].Mon == M )
 			return i;
 	return -1;
 }
@@ -608,7 +580,7 @@ function ToLog(string Mess, optional Object Sender)
 		Log(string(Sender.Name)$"->"$Mess);
 }
 //--------------------------------------------------------------------------------------------------
-// Функции, скопированные чисто для дебага и логов, удалить в финальной версии
+// Р¤СѓРЅРєС†РёРё, СЃРєРѕРїРёСЂРѕРІР°РЅРЅС‹Рµ С‡РёСЃС‚Рѕ РґР»СЏ РґРµР±Р°РіР° Рё Р»РѕРіРѕРІ, СѓРґР°Р»РёС‚СЊ РІ С„РёРЅР°Р»СЊРЅРѕР№ РІРµСЂСЃРёРё
 //--------------------------------------------------------------------------------------------------
 // Force slomo for a longer period of time when the boss dies
 function DoBossDeath()
@@ -643,7 +615,7 @@ function DoBossDeath()
 
 }
 //--------------------------------------------------------------------------------------------------
-// Скопировано из KFGameType для отладки и логов, ничего не менялось, удалить в финале
+// РЎРєРѕРїРёСЂРѕРІР°РЅРѕ РёР· KFGameType РґР»СЏ РѕС‚Р»Р°РґРєРё Рё Р»РѕРіРѕРІ, РЅРёС‡РµРіРѕ РЅРµ РјРµРЅСЏР»РѕСЃСЊ, СѓРґР°Р»РёС‚СЊ РІ С„РёРЅР°Р»Рµ
 function ZombieVolume FindSpawningVolume(optional bool bIgnoreFailedSpawnTime, optional bool bBossSpawning)
 {
 	local ZombieVolume BestZ;
