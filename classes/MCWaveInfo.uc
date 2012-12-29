@@ -17,6 +17,8 @@ var config int					MonstersTotal;
 var config int					MonstersMaxAtOnce;
 var config PerPlayerWaveInfo	PerPlayer;
 var config float				Position;
+var config float				TimeBetweenThisWaveCoeff;
+var config int					PerPlayerFund; // фонд волны на игрока
 
 // если true, волна будет подгружена только если будет указана в MapSpecific настройках
 var config bool				bMapSpecific;
@@ -35,4 +37,6 @@ defaultproperties
 	MonstersTotal=70
 	MonstersMaxAtOnce=50
 	Position=-1
+	TimeBetweenThisWaveCoeff=1.0
+	PerPlayerFund=0
 }

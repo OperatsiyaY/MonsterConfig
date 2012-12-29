@@ -9,15 +9,23 @@
 
 class MonsterConfig extends Mutator
 	dependson(MCSquadInfo)
+	dependson(MCMonsterList)
 	ParseConfig
 	config(MonsterConfig);
-	
+
+// для работы LinkMesh
+#exec obj load file="KF_Freaks_Trip.ukx"
+#exec obj load file="KF_Freaks2_Trip.ukx"
+#exec obj load file="KF_Specimens_Trip_T"
+#exec obj load file="KF_Specimens_Trip_T_Two"
+
 var config int		FakedPlayersNum;
 var config float	MonstersMaxAtOnceMod,MonstersTotalMod;
 var config float	MonsterBodyHPMod,MonsterHeadHPMod,MonsterSpeedMod,MonsterDamageMod;
+var config float	HealedToScoreCoeff;
 
 // общие
-var KFGametype		GT;
+var MCGameType		GT;
 var FileLog			MCLog; // отдельный лог
 var config class<KFGameType>	GameTypeClass; // позволить юзерам наследовать уже свой GameType, наследованынй от нашего
 
@@ -30,19 +38,26 @@ var array<MCSquadInfo>			Squads;
 var array<MCWaveInfo>			Waves;
 var MCMapInfo					MapInfo;
 
+// для системы наград от Тело
+var config bool					bWaveFundSystem; // указывает какая система фонда будет использоваться
+var MCPerkStats					PerkStats;
+var array<PlayerController>		PendingPlayers; // игроки, которым присвоить MCRepInfo
+
+// для LinkMesh на клиенте
+var array<KFMonster>			PendingMonsters;
+var MCMonsterList				MList, MListClient; // связный список монстров для репликации клиенту
+var int							MListRevision;
+
 // выключение стандартных киллсмесседж KillsMessageOff()
 var bool bKillsMessageReplace, bKillsMessageReplaceClient;
 //var MCKillMessageRoutines LMRoutine;
-//--------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------
-simulated function PostNetReceive()
+
+replication
 {
-	if (bKillsMessageReplace != bKillsMessageReplaceClient)
-	{
-		bKillsMessageReplaceClient = bKillsMessageReplace;
-		KillsMessageOff();
-	}
+	reliable if (ROLE==ROLE_Authority)
+		MList;
 }
+//--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 function PostBeginPlay()
 {
@@ -59,6 +74,12 @@ function PostBeginPlay()
 		return;
 	}
 	GT = MCGameType(Level.Game);
+	
+	if (Level!=none && Level.NetMode != NM_Client)
+		MList = Spawn(class'MCMonsterList', self);
+
+	if (bWaveFundSystem)
+		PerkStats = new(None, "PerkStats") class'MCPerkStats';
 
 	ReadConfig();
 
@@ -75,23 +96,148 @@ function PostBeginPlay()
 	 * Респавнит мертвых
 	 * Зачисляет стату
 	 * Респавнит двери
-	 * 
+	 *
 	 * KFGameType.InitMapWaveCfg
 	 * Выключает ZombieVolume, исходя из ZombieVolume.DisabledWaveNums
-	 * 
+	 *
 	 * KFGameType.StartWaveBoss
 	 * Устанавливает NextSpawnSquad.Length = 1
 	 * Устанавливает NextSpawnSquad[0] - босса
 	 * KFGameReplicationInfo(Level.Game.GameReplicationInfo).MaxMonsters = 1;
 	 * TotalMaxMonsters = 1;
 	 * bWaveBossInProgress = True;
-	 */ 
+	 */
 
 	bKillsMessageReplace = true;
 	KillsMessageOff();
 	//LMRoutine = spawn(class'MCKillMessageRoutines', self);
 
-	MCGameType(GT).PostInit(Self);	
+	GT.PostInit(Self);
+}
+//--------------------------------------------------------------------------------------------------
+// Инициализируем все параметры монстра вызывается из MCZombieVolume
+function InitMonster(KFMonster M, MCMonsterInfo MI)
+{
+	local int PlayersCount;
+	local MonsterConfig SC;
+	local float TempDamage, F;
+
+//	local class<KFMonster> KFM;
+
+	SC = MCGameType(Level.Game).SandboxController;
+	if (SC==none)
+	{
+		Log("MCZombieVolume->MCInitMonster->Failed to load MCGameType.SandboxController. So exit");
+		return;
+	}
+	PlayersCount = SC.GetNumPlayers(true) - 1; // ВЫЧИТАЕМ УЖЕ ТУТ
+
+/*
+	// редефайн имени монстра для Killmessages mut'а
+	// TODO проверить где он еще используется кроме Killmessages, и не накосячит ли чего эта замена
+	// т.к. killmessages сначала пытается брать имя монстра из его Default.MenuName, то дефолт мы обнуляем
+	// а обычный MenuName ставим. Если не указан, то ставим в дефолтовый, для этого дефолтовые значениясм
+	// сохраняем в массиве.
+	// код из killmessages:
+	// if( Len(M.Default.MenuName)==0 )
+	//		return string(M.Name);
+	// return M.Default.MenuName;
+	if (Len(M.default.MenuName) > 0)
+		SaveDefaultMenuName(M.Class);
+
+	if (Len(MI.MenuName)>0)
+	{
+		M.default.MenuName="";
+		M.MenuName = MI.MenuName$"s";
+	}
+	else
+		M.MenuName = GetDefaultMenuName(M.Class)$"s";
+	//KFM = M.Class;
+	//KFM.default.MenuName = "s3";
+*/
+	// HEALTH
+	if (MI.Health != -1)
+		F = MI.Health;
+	else
+		F = M.Health;
+	F += MI.PerPlayer.Health * Max(0,PlayersCount);
+	if (MI.HealthMax != -1)
+		F = Min(MI.HealthMax, F);
+	M.Health = F * (SC.MonsterBodyHPMod * SC.MapInfo.MonsterBodyHPMod);
+	M.HealthMax = M.Health;
+
+	if (MI.HeadHealth != -1)
+		F = MI.HeadHealth;
+	else
+		F = M.HeadHealth;
+	F += MI.PerPlayer.HeadHealth * Max(0,PlayersCount);
+	if (MI.HeadHealthMax != -1)
+		F = Min(MI.HeadHealthMax, F);
+	M.HeadHealth = F * (SC.MonsterHeadHPMod * SC.MapInfo.MonsterHeadHPMod);
+
+	M.default.Health = M.Health;
+	M.default.HeadHealth = M.HeadHealth;
+
+	if ( MI.Speed <= 0 )
+	{
+		M.OriginalGroundSpeed *= MI.SpeedMod;
+		M.GroundSpeed = M.OriginalGroundSpeed;
+		M.WaterSpeed *= MI.SpeedMod;
+		M.AirSpeed *= MI.SpeedMod;
+	}
+	else
+	{
+		M.OriginalGroundSpeed = MI.Speed;
+		M.GroundSpeed = M.OriginalGroundSpeed;
+		M.WaterSpeed = M.GroundSpeed * 0.90;
+		M.AirSpeed = M.GroundSpeed * 1.10;
+	}
+
+	M.OriginalGroundSpeed *= SC.MonsterSpeedMod * SC.MapInfo.MonsterSpeedMod;
+	M.GroundSpeed = M.OriginalGroundSpeed;
+	M.WaterSpeed *= SC.MonsterSpeedMod * SC.MapInfo.MonsterSpeedMod;
+	M.AirSpeed *= SC.MonsterSpeedMod * SC.MapInfo.MonsterSpeedMod;
+
+	TempDamage = M.MeleeDamage * SC.MonsterDamageMod * SC.MapInfo.MonsterDamageMod;
+	M.MeleeDamage = TempDamage;
+	TempDamage = TempDamage - float(M.MeleeDamage);
+
+	if ( FRand() < TempDamage )
+	{
+		M.MeleeDamage += 1;
+	}
+
+	TempDamage = M.ScreamDamage * SC.MonsterDamageMod * SC.MapInfo.MonsterDamageMod;
+	M.MeleeDamage = TempDamage;
+	TempDamage = TempDamage - float(M.MeleeDamage);
+
+	if ( FRand() < TempDamage )
+	{
+		M.ScreamDamage += 1;
+	}
+
+	if (true || MI.MonsterSize!=1.0)
+	{
+		F = FRand()*2.3; //Clamp(MI.MonsterSize, 0.1, 5);
+		F = FClamp(F, 0.8, 1.2);
+		M.SetDrawScale(M.default.DrawScale * F);
+		M.SetCollisionSize(M.default.CollisionRadius * F, M.default.CollisionHeight * F);
+		M.BaseEyeHeight = M.default.BaseEyeHeight * F;
+		M.EyeHeight     = M.default.EyeHeight * F;
+
+		M.MeleeRange	= M.default.MeleeRange * F;
+		if (F>1.)
+			M.PrePivot.Z	= M.default.PrePivot.Z * F + ((M.default.ColOffset.Z + M.default.ColHeight)/2.f) * F;
+		if (F<1.)
+			M.PrePivot.Z	= M.default.PrePivot.Z * F - ((M.default.ColOffset.Z + M.default.ColHeight)/2.f) * F;
+
+		M.OriginalGroundSpeed *= F;
+		M.GroundSpeed *= F;
+		//M.PlayTeleportEffect(true, true);
+		//C.Pawn.bCanCrouch = False;
+		//C.Pawn.CrouchHeight  *= newPlayerSize;
+		//C.Pawn.CrouchRadius  *= newPlayerSize;
+	}
 }
 //--------------------------------------------------------------------------------------------------
 function ReadConfig()
@@ -115,9 +261,15 @@ function ReadConfig()
 			tMonsterInfo.MNameObj = new(None, string(tMonsterInfo.Name)) class'MCMonsterNameObj';
 			tMonsterInfo.MNameObj.MonsterName  = tMonsterInfo.MonsterName;
 			tMonsterInfo.MNameObj.MonsterClass = tMonsterInfo.MonsterClass;
-			
-			Monsters.Insert(0,1);
-			Monsters[0] = tMonsterInfo;
+
+			// если трипы удалили Mesh в очередной раз
+			if (tMonsterInfo.MonsterClass.default.Mesh==none && tMonsterInfo.Mesh.Length==0)
+				tMonsterInfo.Mesh[0] = GetDefaultMesh(tMonsterInfo.MonsterClass);
+			if( (tMonsterInfo.MonsterClass.default.Skins.Length==0
+				||tMonsterInfo.MonsterClass.default.Skins[0]==none) && tMonsterInfo.Skins.Length==0 )
+				GetDefaultSkins(tMonsterInfo.MonsterClass, tMonsterInfo.Skins);
+
+			Monsters[Monsters.Length] = tMonsterInfo;
 		}
 		else
 			toLog("Monster:"@string(tMonsterInfo.Name)$". MClass not found. Check settings in"@class'MCMonsterInfo'.default.ConfigFile$".ini");
@@ -214,7 +366,7 @@ function ReadConfig()
 		if (GetWave(tMapInfo.Waves[i]) != none)
 		{
 			tMapInfo.Waves.Remove(i,1);
-			i--;			
+			i--;
 			continue;
 		}
 		tWaveInfo = new(None, tMapInfo.Waves[i]) class'MCWaveInfo';
@@ -272,7 +424,7 @@ function MCWaveInfo GetLastWave()
 	toLog("GetLastWave() Best Wave:"@string(Wave.Name)@Wave.Position);
 	for (i=0;i<Waves.Length;i++)
 	{
-		toLog("GetLastWave() Check Wave:"@string(Waves[i].Name)@Waves[i].Position);	
+		toLog("GetLastWave() Check Wave:"@string(Waves[i].Name)@Waves[i].Position);
 		if (Waves[i].Position > Wave.Position)
 		{
 			Wave = Waves[i];
@@ -290,7 +442,7 @@ function MCWaveInfo GetFirstWave()
 	toLog("GetFirstWave() Best Wave:"@string(Wave.Name)@Wave.Position);
 	for (i=0;i<Waves.Length;i++)
 	{
-		toLog("GetFirstWave() Check Wave:"@string(Waves[i].Name)@Waves[i].Position);	
+		toLog("GetFirstWave() Check Wave:"@string(Waves[i].Name)@Waves[i].Position);
 		if (Waves[i].Position < Wave.Position)
 		{
 			Wave = Waves[i];
@@ -357,15 +509,30 @@ function MCMonsterInfo GetMonster(string MonsterName)
 //--------------------------------------------------------------------------------------------------
 function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
 {
-	if (KillsMessage(Other)!=none)
+	/*if (KillsMessage(Other)!=none)
 	{
 		log("Replacing killsmessage");
 		ReplaceWith(Other, "MonsterConfig.MCKillsMessage");
 		return false;
-	}
+	}*/
 
+	if (bWaveFundSystem)
+	{
+		// Спавним MCRepInfo наш Linked ReplicationInfo с доп.статистикой
+		if (PlayerController(Other)!=none)
+		{
+			PendingPlayers[PendingPlayers.Length] = PlayerController(Other);
+			SetTimer(0.1,false);
+		}
+	}
+	else if (KFMonster(Other)!=none)
+	{	// через 0.1 сек, смотрим MonsterInfo этого монстра, формируем массив для репликации клиенту
+		// и на клиенте делаем LinkMesh
+		PendingMonsters[PendingMonsters.Length] = KFMonster(Other);
+		SetTimer(0.1, false);
+	}
 	// Замена ZombieVolumes на MCZombieVolume
-	if ( ZombieVolume(Other)!=none && MCZombieVolume(Other)==none )
+	else if ( ZombieVolume(Other)!=none && MCZombieVolume(Other)==none )
 	{
 //		bReplaceZombieVolumes=true;
 		PendingZombieVolumes.Insert(0,1);
@@ -374,18 +541,69 @@ function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
 	return true;
 }
 //--------------------------------------------------------------------------------------------------
+simulated function PostNetReceive()
+{
+	if (bKillsMessageReplace != bKillsMessageReplaceClient)
+	{
+		bKillsMessageReplaceClient = bKillsMessageReplace;
+		KillsMessageOff();
+	}
+	if (MListClient != MList)
+	{
+		LM("Got new MList from server");
+		MListClient = MList;
+	}
+}
+//--------------------------------------------------------------------------------------------------
 simulated function Tick(float dt)
 {
-	if ( GT == none )
+	local MCMonsterList tMList;
+	local int i;
+	if (Level != none && Level.NetMode != NM_Client)
 	{
-		GT = KFGameType(Level.Game);
-		if ( GT == none )
-			return;
+		if (GT == none)
+		{
+			GT = MCGameType(Level.Game);
+			if ( GT == none )
+				return;
+		}
+		while ( PendingZombieVolumes.Length > 0 )
+		{
+			ReplaceZombieVolume(PendingZombieVolumes[0]);
+			PendingZombieVolumes.Remove(0,1);
+		}
 	}
-	while ( PendingZombieVolumes.Length > 0 )
+	// Обрабатываем прибывшие LinkMesh'и на клиенте
+	if (MListRevision != MList.ListRevision)
 	{
-		ReplaceZombieVolume(PendingZombieVolumes[0]);
-		PendingZombieVolumes.Remove(0,1);
+		LM("Got new MList ListRevision"@MList.ListRevision);
+		MListRevision = MList.ListRevision;
+		for (tMList = MList; tMList != none; tMList = tMList.GetNext())
+		{
+			LM("tMList iteration");
+			if( tMList.revision != tMList.revisionClient
+				&& tMList.Mon != none
+				&& (tMList.MonMesh != none || tMList.Skins[0]!=none) )
+			{
+				tMList.revisionClient = tMList.revision;
+				LM("tMList"@string(tMList.Mon.Name)@"is new rev."@tMList.revision);
+				if (tMList.MonMesh!=none)
+				{
+					LM("tMList monmesh !=none");
+					tMList.Mon.LinkMesh(tMList.MonMesh);
+					LM("LinkMesh"@string(tMList.MonMesh));
+					//tMList.Mon.UpdateDefaultMesh(tMList.MonMesh);
+					//tMList.Mon.default.Mesh = tMList.MonMesh;
+				}
+				if (tMList.Mon.Mesh!=none && tMList.MonSkins[0]!=none)
+					for (i=0;i<arraycount(tMList.MonSkins); i++)
+						if (tMList.MonSkins[i]!=none)
+						{
+							tMList.Mon.Skins[i] = tMList.MonSkins[i];
+							LM("applyskin"@string(tMList.MonSkins[i]));
+						}
+			}
+		}
 	}
 }
 //--------------------------------------------------------------------------------------------------
@@ -407,6 +625,8 @@ function bool ReplaceZombieVolume(ZombieVolume CurZMV)
 	}
 
 	NewVol = Spawn(class'MCZombieVolume',Level,,CurZMV.Location,CurZMV.Rotation);
+
+	NewVol.SandboxController = self;
 
 	// копируем точки спавна
 	n = CurZMV.SpawnPos.Length;
@@ -466,15 +686,15 @@ function toLog(string M, optional Object Sender)
 		Spec = String(Sender.Name)$"->";
 	else
 		Spec = string(self.name)$"->";
-		
+
 	MCLog.LogF(Spec $ M);
 	Log(Spec $ M);
 }
 //--------------------------------------------------------------------------------------------------
 function Destroyed()
 {
-	Super.Destroyed();
 	MCLog.CloseLog();
+	Super.Destroyed();
 }
 //--------------------------------------------------------------------------------------------------
 // функция на вход получает строку Wave_1 на выходе выдает 1 (float)
@@ -511,41 +731,6 @@ function bool IsNumber(string Num)
 	return false;
 }
 //--------------------------------------------------------------------------------------------------
-/*function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
-{
-	local float BestPos;
-	local int i,n;
-	local MCWaveInfo Ret;
-	
-	Ret = CurWave;
-	n = Waves.Length;
-	BestPos = CurWave.Position;
-	
-	for(i=0; i<n; i++)
-	{
-		if ( Waves[i].Position < CurWave.Position )
-			continue;
-		
-		if ( BestPos == CurWave.Position )
-		{
-			Ret = Waves[i];
-			BestPos = Ret.Position;
-			continue;
-		}
-		
-		if ( Waves[i].Position < BestPos )
-		{
-			Ret = Waves[i];
-			BestPos = Ret.Position;
-		}
-	}
-	
-	if ( Ret == CurWave )
-		return none;
-		
-	return Ret;
-}*/
-//--------------------------------------------------------------------------------------------------
 // функция возвращает следующую после CurWave волну, а при неудаче возвращает none
 function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
 {
@@ -559,7 +744,7 @@ function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
 	BestPos = CurWave.Position;
 	for (i=0;i<Waves.Length;i++)
 	{
-		if ( Waves[i].Position <= BestPos )	// ищем только волны, следующие за текущей, 
+		if ( Waves[i].Position <= BestPos )	// ищем только волны, следующие за текущей,
 			continue;						//а предыдущие и равные текущей пропускаем
 		if (BestPos == CurWave.Position)	// если еще ничего не нашли,
 		{									// то берем первую попавшуюся волну
@@ -605,7 +790,7 @@ function float GetNumPlayers(optional bool bOnlyAlive, optional bool bNotCountFa
 {
 	local int NumPlayers;
 	local Controller C;
-	
+
 	For( C=Level.ControllerList; C!=None; C=C.NextController )
 	{
 		if( C.bIsPlayer && ( !bOnlyAlive || (C.Pawn!=None && C.Pawn.Health > 0 ) ) )
@@ -615,21 +800,114 @@ function float GetNumPlayers(optional bool bOnlyAlive, optional bool bNotCountFa
 	}
 	if ( !bNotCountFaked )
 		return NumPlayers + FakedPlayersNum;
-		
+
 	return NumPlayers;
 }
 //--------------------------------------------------------------------------------------------------
 simulated function Timer()
 {
-	Super.Timer();
-	
+	local int i,j,n;
+	local MCRepInfo RInfo;
+	local KFMonster Mon;
+	local bool bFound;
+	local MCMonsterList.MListInput	MI;
+
 	if ( MCLog != none )
 	{
 		MCLog.CloseLog();
 		MCLog.OpenLog("MonsterConfigLog","log",false);
 	}
-	
 	SetTimer(15,false);
+
+	if (PendingMonsters.Length>0)
+	{
+		for (i=0;i<PendingMonsters.Length;i++)
+		{
+			Mon = PendingMonsters[i];
+			bFound = false;
+			for (j=GT.AliveMonsters.Length-1; j>=0; j--)
+				if (Mon == GT.AliveMonsters[j].Mon)
+				{
+					if( GT.AliveMonsters[j].MonType.Mesh.Length>0
+						|| GT.AliveMonsters[j].MonType.Skins.Length>0 )
+					{
+						MI.Mesh = GT.AliveMonsters[j].MonType.Mesh;
+						for (n=0;n<GT.AliveMonsters[j].MonType.Skins.Length; n++)
+							if (GT.AliveMonsters[j].MonType.Skins[n]!=none)
+								MI.Skins[n] = GT.AliveMonsters[j].MonType.Skins[n];
+						/*n = Rand(GT.AliveMonsters[j].MonType.Mesh.Length-1);
+						n = Max(0,n);*/
+						//MList.AddMInfo(Mon, GT.AliveMonsters[j].MonType/*GT.AliveMonsters[j].MonType.Mesh[n]*/);
+					}
+					bFound=true;
+					break;
+				}
+			if (bFound==false) // только для монстров, заспавленных не через MCZombieVolume
+			{
+				MI.Mesh[0] = GetDefaultMesh(Mon.Class);
+				GetDefaultSkins(Mon.Class, MI.Skins);
+			}
+			if (MI.Mesh[0]!=none || MI.Skins[0]!=none)
+				MList.Add(Mon, MI);
+		}
+		PendingMonsters.Remove(0,PendingMonsters.Length);
+	}
+
+	if (bWaveFundSystem)
+	{
+		for( i=0; i<PendingPlayers.Length; i++ )
+		{
+			if (PendingPlayers[i] == none)
+			{
+				PendingPlayers.Remove(i,1);
+				i--;
+				continue;
+			}
+			else if( PendingPlayers[i].Player != none
+					&& PendingPlayers[i].PlayerReplicationInfo != none )
+			{
+				RInfo = GetMCRepInfo(PendingPlayers[i].PlayerReplicationInfo);
+				if (RInfo==none)
+					RInfo = Spawn(class'MCRepInfo', PendingPlayers[i]); // вставится в CustomRepLink цепочку сама
+				if (GetHealedStats(PendingPlayers[i].PlayerReplicationInfo, RInfo.HealedStat))
+				{
+					PendingPlayers.Remove(i,1);
+					i--;
+				}
+			}
+		}
+		if (PendingPlayers.Length>0) //PendingPlayers.Length = 0;
+			SetTimer(0.1,false);
+	}
+	Super.Timer();
+
+}
+//--------------------------------------------------------------------------------------------------
+function AddCustomReplicationInfo(PlayerReplicationInfo PRI, LinkedReplicationInfo L)
+{
+	if (PRI.CustomReplicationInfo == none)
+		PRI.CustomReplicationInfo = L;
+	else
+	{
+		for( L=PRI.CustomReplicationInfo; L!=none; L=L.NextReplicationInfo )
+		{
+			if (L.Class==L.Class)
+			{
+				warn(L.Class@"already loaded for"@PRI.PlayerName);
+				return;
+			}
+		}
+
+		for( L=PRI.CustomReplicationInfo; L!=none; L=L.NextReplicationInfo )
+		{
+			if( L.NextReplicationInfo==none )
+			{
+				L.NextReplicationInfo = L; // Add to the end of the chain.
+				log(L.Class@"loaded for"@PRI.PlayerName);
+				return;
+			}
+		}
+	}
 }
 //--------------------------------------------------------------------------------------------------
 simulated function KillsMessageOff()
@@ -641,19 +919,165 @@ simulated function KillsMessageOff()
     H.bTallySpecimenKills = false;
 }
 //--------------------------------------------------------------------------------------------------
+function bool GetDefaultSkins(class<KFMonster> KCM, out array<Material> Skins)
+{
+	if( KCM==None )
+		return false;
+	if( Class<ZombieBloatBase>(KCM)!=None )
+	{
+		Skins[0] = Combiner'KF_Specimens_Trip_T.bloat_cmb';
+	}
+	else if( Class<ZombieBossBase>(KCM)!=None )
+	{
+		Skins[0]=Combiner'KF_Specimens_Trip_T.gatling_cmb';
+		Skins[1]=Combiner'KF_Specimens_Trip_T.patriarch_cmb';
+	}
+	else if( Class<ZombieClotBase>(KCM)!=None )
+	{
+		Skins[0]=Combiner'KF_Specimens_Trip_T.clot_cmb';
+	}
+	else if( Class<ZombieCrawlerBase>(KCM)!=None )
+	{
+		Skins[0]=Combiner'KF_Specimens_Trip_T.crawler_cmb';
+	}
+	else if( Class<ZombieFleshPoundBase>(KCM)!=None )
+	{
+		Skins[0]=Combiner'KF_Specimens_Trip_T.fleshpound_cmb';
+		Skins[1]=Shader'KFCharacters.FPAmberBloomShader';
+	}
+	else if( Class<ZombieGorefastBase>(KCM)!=None )
+	{
+		Skins[0]=Combiner'KF_Specimens_Trip_T.gorefast_cmb';
+	}
+	else if( Class<ZombieHuskBase>(KCM)!=None )
+	{
+		Skins[0]=Texture'KF_Specimens_Trip_T_Two.burns.burns_tatters';
+		Skins[1]=Shader'KF_Specimens_Trip_T_Two.burns.burns_shdr';
+	}
+	else if( Class<ZombieScrakeBase>(KCM)!=None )
+	{
+		Skins[0]=Shader'KF_Specimens_Trip_T.scrake_FB';
+		Skins[1]=TexPanner'KF_Specimens_Trip_T.scrake_saw_panner';
+	}
+	else if( Class<ZombieSirenBase>(KCM)!=None )
+	{
+		Skins[0]=FinalBlend'KF_Specimens_Trip_T.siren_hair_fb';
+		Skins[1]=Combiner'KF_Specimens_Trip_T.siren_cmb';
+	}
+	else if( Class<ZombieStalkerBase>(KCM)!=None )
+	{
+		Skins[0]=Shader'KF_Specimens_Trip_T.stalker_invisible';
+		Skins[1]=Shader'KF_Specimens_Trip_T.stalker_invisible';
+	}
+	else
+		return false;
+	return true;
+}
+//--------------------------------------------------------------------------------------------------
+function Mesh GetDefaultMesh(class<KFMonster> KCM)
+{
+	if(KCM==None)
+		return none;
+	else if (KCM.Default.Mesh != none)
+		return KCM.Default.Mesh;
+	else if( Class<ZombieBloatBase>(KCM)!=None )
+		return Mesh'Bloat_Freak';
+	else if( Class<ZombieBossBase>(KCM)!=None )
+		return Mesh'Patriarch_Freak';
+	else if( Class<ZombieClotBase>(KCM)!=None )
+		return Mesh'CLOT_Freak';
+	else if( Class<ZombieCrawlerBase>(KCM)!=None )
+		return Mesh'Crawler_Freak';
+	else if( Class<ZombieFleshPoundBase>(KCM)!=None )
+		return Mesh'FleshPound_Freak';
+	else if( Class<ZombieGorefastBase>(KCM)!=None )
+		return Mesh'GoreFast_Freak';
+	else if( Class<ZombieHuskBase>(KCM)!=None )
+		return Mesh'Burns_Freak';
+	else if( Class<ZombieScrakeBase>(KCM)!=None )
+		return Mesh'Scrake_Freak';
+	else if( Class<ZombieSirenBase>(KCM)!=None )
+		return Mesh'Siren_Freak';
+	else if( Class<ZombieStalkerBase>(KCM)!=None )
+		return Mesh'Stalker_Freak';
+}
+//--------------------------------------------------------------------------------------------------
+function MCRepInfo GetMCRepInfo(PlayerReplicationInfo PRI)
+{
+	local LinkedReplicationInfo L;
+	for( L=PRI.CustomReplicationInfo; L!=None; L=L.NextReplicationInfo )
+		if( MCRepInfo(L)!=none )
+			return MCRepInfo(L);
+	return none;
+}
+//--------------------------------------------------------------------------------------------------
+// PRI is not none here (checked before call)
+function bool GetHealedStats(PlayerReplicationInfo PRI, out int Ret)
+{
+	// Trying to get stats from ServerPerks if loaded
+	// God Marko thank you
+	local LinkedReplicationInfo L;
+
+	for( L=PRI.CustomReplicationInfo; L!=None; L=L.NextReplicationInfo )
+		if( L.IsA('ClientPerkRepLink') )
+		{
+			Ret = int(L.GetPropertyText("RWeldingPointsStat"));
+			Log("GetHealedStats()->found RDamageHealed for"@PRI.PlayerName@":"@ret);
+			return true;
+		}
+
+	// trying to get stats from usual SteamStatsAndAchievements
+	if (KFSteamStatsAndAchievements(PRI.SteamStatsAndAchievements)!=none)
+	{
+		Ret = KFSteamStatsAndAchievements(PRI.SteamStatsAndAchievements).DamageHealedStat.Value;
+		Log("GetHealedStats()->found DamageHealed for"@PRI.PlayerName@":"@ret);
+		return true;
+	}
+
+	// Because ServerPerks below v6.1 have server-side bug that ClientPerkRepLink dont added to List,
+	// try to find it with next routine
+	foreach DynamicActors(class'LinkedReplicationInfo',L)
+		if (L.IsA('ClientPerkRepLink'))
+			if (PlayerController(L.Owner) == PlayerController(PRI.Owner))
+			{
+				Ret = int(L.GetPropertyText("RWeldingPointsStat"));
+				Log("GetHealedStats()->found RDamageHealed for"@PRI.PlayerName@":"@ret@"With DynamicActors routine");
+				// Marco said DynamicActors is SLOW operation, so add it to LinkedRepInfoList
+				AddCustomReplicationInfo(PRI, L);
+				return true;
+			}
+
+	Log("GetHealedStats()->Failed to load any Stats class");
+	return false;
+}
+//--------------------------------------------------------------------------------------------------
+simulated function LM(string M)
+{
+	if (Level==none || Level.NetMode==NM_DedicatedServer)
+		return;
+	log(M);
+	Level.GetLocalPlayerController().ClientMessage(M);
+}
+//--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 defaultproperties
 {
-	bAlwaysRelevant = true
-	RemoteRole = ROLE_SimulatedProxy
-	bNetNotify = true
-	
+	bAlwaysRelevant=true
+	RemoteRole=ROLE_SimulatedProxy
+	bNetNotify=true
+
 	FakedPlayersNum = 0
 	MonstersTotalMod = 1.00
 	MonstersMaxAtOnceMod = 1.00
-	
+
 	MonsterBodyHPMod = 1.00
 	MonsterHeadHPMod = 1.00
 	MonsterSpeedMod = 1.00
 	MonsterDamageMod = 1.00
+
+	// В конце волны вычисляем сколько игрок похилил
+	// и к его очкам за волну добавляем значение, умноженное на этот коэффициент
+	HealedToScoreCoeff = 5.00
+
+	bWaveFundSystem = false
 }

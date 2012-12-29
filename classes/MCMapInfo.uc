@@ -15,6 +15,7 @@ var config float			DelayBetweenSquadsCoeff;
 var config float			MonstersTotalCoeff;
 var config float			MonstersMaxAtOnceCoeff;
 var config bool				bUseZombieVolumeWaveDisabling;
+var config float			TimeBetweenWaves;
 
 
 var config float	MonsterBodyHPMod,MonsterHeadHPMod,MonsterSpeedMod,MonsterDamageMod;
@@ -42,4 +43,5 @@ defaultproperties
 	MonsterSpeedMod = 1.00
 	MonsterDamageMod = 1.00
 	bUseZombieVolumeWaveDisabling = true
+	TimeBetweenWaves=90
 }
