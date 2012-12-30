@@ -9,7 +9,6 @@ struct AliveMonsterInfo
 	var Name			MName;
 	var MCMonsterInfo	MonType;
 };
-
 var bool					bReady; // флаг выставляется в PostInit(),
 									// который вызывается SandboxController.PostBeginPlay()
 
@@ -19,8 +18,8 @@ var array<MCSquadInfo>		Squads, SpecSquads;// сквады для текущей
 var array<MCSquadInfo>		SquadsToPick;	 // рабочий массив отрядов из него дергаем рандомно
 var array<MCMonsterInfo>	SquadToSpawn; // текущий отряд (массив MonsterInfo)
 var MCSquadInfo				CurrentSquad; // текущий отряд
-var array<AliveMonsterInfo> AliveMonsters;	// для сопоставления с MonsterInfo в ReduceDamage
-var array<AliveMonsterInfo>	DeadMonsters;	// т.к. ScoreKill вызывается после Killed
+//var array<AliveMonsterInfo> AliveMonsters;	// для сопоставления с MonsterInfo в ReduceDamage
+//var array<AliveMonsterInfo>	DeadMonsters;	// т.к. ScoreKill вызывается после Killed
 											// то AliveMonsters должнны удаляться в следующем тике
 											// поэтому заполняем DeadMonsters и удаляем их из AliveMonsters
 											// в след.тике
@@ -469,8 +468,10 @@ function ScoreKill(Controller Killer, Controller Other)
 	{
 		Killer.PlayerReplicationInfo.Kills++;
 		if (SandboxController.bWaveFundSystem==false)
-		{
-			tMonsterInfo = GetAliveMonsterInfo(Other, Other.Pawn);
+		{	
+			//GetAliveMonsterInfo(Other, Other.Pawn);
+			tMonsterInfo = SandboxController.GetMonInfo(KFMonster(Other.Pawn), Other);
+
 			if( tMonsterInfo==none || tMonsterInfo.RewardScore == tMonsterInfo.default.RewardScore )
 			{
 				if (LastKilledMonsterClass != none)
@@ -645,8 +646,9 @@ state MatchInProgress
 		if (SandboxController.bWaveFundSystem)
 			SandboxController.PerkStats.SaveConfig();
 
-		DeadMonsters.Remove(0,DeadMonsters.Length);
-		AliveMonsters.Remove(0,AliveMonsters.Length);
+		SandboxController.WaveEnd();
+		//DeadMonsters.Remove(0,DeadMonsters.Length);
+		//AliveMonsters.Remove(0,AliveMonsters.Length);
 	}
 	//----------------------------------------------------------------------------------------------
 	// определяем через какое время спавнить монстров
@@ -1098,7 +1100,7 @@ function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
 // Считает коэффициент дамага монстру исходя из MonsterInfo->Resist
 function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector HitLocation, out vector Momentum, class<DamageType> DamageType)
 {
-	local int index,i,n;
+	local int i,n;
 	local KFMonster M;
 	local MCMonsterInfo MonInfo;
 	local MCRepInfo tMCRepInfo;
@@ -1106,23 +1108,19 @@ function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector Hi
 	toLog("ReduceDamage()->Orig:"@Damage);
 	M = KFMonster(Injured);
 	if (M!=none)
+		MonInfo = SandboxController.GetMonInfo(M, M.Controller);
+	if (MonInfo!=none)
 	{
-		index = GetAliveMonsterIndex(M, M.Controller);
-
-		if ( index != -1 )
+		n = MonInfo.Resist.Length;
+		for(i=0; i<n; i++)
 		{
-			MonInfo = AliveMonsters[index].MonType;
-			n = MonInfo.Resist.Length;
-			for(i=0; i<n; i++)
+			if ( MonInfo.Resist[i].DamType == DamageType
+				|| (!MonInfo.Resist[i].bNotCheckChild
+					&& ClassIsChildOf( DamageType, MonInfo.Resist[i].DamType) ) )
 			{
-				if ( MonInfo.Resist[i].DamType == DamageType
-					|| (!MonInfo.Resist[i].bNotCheckChild
-						&& ClassIsChildOf( DamageType, MonInfo.Resist[i].DamType) ) )
-				{
-					Damage = round(float(Damage) * MonInfo.Resist[i].Coeff);
-					toLog("ReduceDamage()->Reduced:"@Damage@"MonInfo"@string(MonInfo.Name));
-					break;
-				}
+				Damage = round(float(Damage) * MonInfo.Resist[i].Coeff);
+				toLog("ReduceDamage()->Reduced:"@Damage@"MonInfo"@string(MonInfo.Name));
+				break;
 			}
 		}
 	}
@@ -1146,7 +1144,7 @@ function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector Hi
 	return Damage;
 }
 //--------------------------------------------------------------------------------------------------
-// Заполняем массив AliveMonsters, для сопоставления Monster и его MonsterInfo (для ReduceDamage)
+/*// Заполняем массив AliveMonsters, для сопоставления Monster и его MonsterInfo (для ReduceDamage)
 function NotifyMonsterSpawn(KFMonster Mon, MCMonsterInfo MonInfo)
 {
 	local int n;
@@ -1157,7 +1155,7 @@ function NotifyMonsterSpawn(KFMonster Mon, MCMonsterInfo MonInfo)
 	AliveMonsters[n].Controller = Mon.Controller;
 	AliveMonsters[n].MName		= Mon.Name;
 	AliveMonsters[n].MonType	= MonInfo;
-}
+}*/
 //--------------------------------------------------------------------------------------------------
 function Killed(Controller Killer, Controller Killed, Pawn KilledPawn, class<DamageType> damageType)
 {
@@ -1169,7 +1167,8 @@ function Killed(Controller Killer, Controller Killed, Pawn KilledPawn, class<Dam
 	M = KFMonster(KilledPawn);
 	if (M!=none)
 	{
-		MI = GetAliveMonsterInfo(M, Killed);
+		//GetAliveMonsterInfo(M, Killed);
+		MI = SandboxController.GetMonInfo(KFMonster(KilledPawn), Killed);
 		if (MI==none)
 		{
 			toLog("Killed->Failed to load Killed Monsterinfo with GetAliveMonsterInfo");
@@ -1195,12 +1194,16 @@ function Killed(Controller Killer, Controller Killed, Pawn KilledPawn, class<Dam
 					xPlayer(Killer).ReceiveLocalizedMessage(Class'MCKillsMessage',,, M.PlayerReplicationInfo,MI.MNameObj);
 				}
 			/* End Marco's Kill Messages */
-			DeadMonsters.Insert(0,1);
+			 
+			SandboxController.NotifyMonsterKill(M, Killed);
+
+			/*DeadMonsters.Insert(0,1);
 			DeadMonsters[0].Mon = M;
 			DeadMonsters[0].Controller = Killed;
 			DeadMonsters[0].MName = M.Name;
 
 			SandboxController.MList.Del(M); // реплицируемый массив для LinkMesh на стороне клиента
+			*/
 		}
 
 		/*i = GetAliveMonsterIndex(M, Killed);
@@ -1215,10 +1218,10 @@ function Killed(Controller Killer, Controller Killed, Pawn KilledPawn, class<Dam
 //--------------------------------------------------------------------------------------------------
 function Tick( float dt )
 {
-	local int i,j;
+	//local int i,j;
 	Super.Tick(dt);
 
-	for (i=0;i<DeadMonsters.Length;i++)
+	/*for (i=0;i<DeadMonsters.Length;i++)
 	{
 		j = GetAliveMonsterIndex(DeadMonsters[i].Controller, DeadMonsters[i].Mon, DeadMonsters[i].MName);
 		if ( j != -1 )
@@ -1229,10 +1232,10 @@ function Tick( float dt )
 		else
 			toLog("Tick->DeadMonsters cleanup = bad condition");
 		DeadMonsters.Remove(i,1);
-	}
+	}*/
 }
 //--------------------------------------------------------------------------------------------------
-function MCMonsterInfo GetAliveMonsterInfo(Actor A, optional Actor B)
+/*function MCMonsterInfo GetAliveMonsterInfo(Actor A, optional Actor B)
 {
 	local int i,n;
 	local Controller C;
@@ -1255,10 +1258,10 @@ function MCMonsterInfo GetAliveMonsterInfo(Actor A, optional Actor B)
 	}
 	toLog("GetAliveMonsterInfo->Failed");
 	return none;
-}
+}*/
 //--------------------------------------------------------------------------------------------------
 // Используется в ReduceDamage для сопоставления Монстра к его MonsterInfo (нужны коэффициенты)
-function int GetAliveMonsterIndex(Actor A, optional Actor B, optional Name MName)
+/*function int GetAliveMonsterIndex(Actor A, optional Actor B, optional Name MName)
 {
 	local int i,n;
 	local Controller C;
@@ -1288,7 +1291,7 @@ function int GetAliveMonsterIndex(Actor A, optional Actor B, optional Name MName
 	}
 	toLog("GetAliveMonsterIndex->Failed");
 	return -1;
-}
+}*/
 //--------------------------------------------------------------------------------------------------
 function ToLog(string Mess, optional Object Sender)
 {

@@ -37,6 +37,22 @@ var array<MCMonsterInfo>		Monsters;
 var array<MCSquadInfo>			Squads;
 var array<MCWaveInfo>			Waves;
 var MCMapInfo					MapInfo;
+// репликация на клиенты
+var MCStringReplicationInfo		RDataMonsters;
+var int							RDataMonstersRevisionServer, RDataMonstersRevisionClient;
+var const string				rDataDelim;
+/*
+struct InGameMonster
+{
+	var KFMonster	Monster;
+	var Controller	Controller;
+	var Name		MonsterName;
+	var string		MonsterInfoName;
+	var bool		bClientInit;	// флаг о том, что клиент инициализировал данного монстра
+};
+*/
+var MCMonsterList AliveMonsters;
+var MCMonsterList KilledMonsters;
 
 // для системы наград от Тело
 var config bool					bWaveFundSystem; // указывает какая система фонда будет использоваться
@@ -55,7 +71,7 @@ var bool bKillsMessageReplace, bKillsMessageReplaceClient;
 replication
 {
 	reliable if (ROLE==ROLE_Authority)
-		MList;
+		MList, RDataMonsters, RDataMonstersRevisionServer, AliveMonsters;
 }
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
@@ -74,7 +90,7 @@ function PostBeginPlay()
 		return;
 	}
 	GT = MCGameType(Level.Game);
-	
+
 	if (Level!=none && Level.NetMode != NM_Client)
 		MList = Spawn(class'MCMonsterList', self);
 
@@ -82,6 +98,12 @@ function PostBeginPlay()
 		PerkStats = new(None, "PerkStats") class'MCPerkStats';
 
 	ReadConfig();
+
+	RDataMonsters = spawn(class'MCStringReplicationInfo',self);
+	MakeRData();
+
+	AliveMonsters = spawn(class'MCMonsterList', self);
+	KilledMonsters = spawn(class'MCMonsterList', self);
 
 	/* KFGameType->InitGame:
 	 * Установка KFGameType.MaxPlayers
@@ -115,16 +137,40 @@ function PostBeginPlay()
 	GT.PostInit(Self);
 }
 //--------------------------------------------------------------------------------------------------
-// Инициализируем все параметры монстра вызывается из MCZombieVolume
-function InitMonster(KFMonster M, MCMonsterInfo MI)
+function MakeRData()
 {
-	local int PlayersCount;
+	local int i, bBadCRC;
+	local string S, prevS;
+	
+	prevS = RDataMonsters.GetString(bBadCRC);
+	
+	for (i=0;i<Monsters.Length;i++)
+	{
+		if (Len(S)==0)
+			S=Monsters[i].Serialize();
+		else 
+			S$=rDataDelim $ Monsters[i].Serialize();
+	}
+
+	if (prevS!=S)
+	{
+		RDataMonsters.SetString(S);
+		RDataMonstersRevisionServer++;
+	}
+}
+//--------------------------------------------------------------------------------------------------
+// Инициализируем все параметры монстра вызывается из MCZombieVolume
+simulated function InitMonster(KFMonster M, MCMonsterInfo MI)
+{
+	local int i, PlayersCount;
 	local MonsterConfig SC;
 	local float TempDamage, F;
 
+	LM("initmonster"@MI.Name);
 //	local class<KFMonster> KFM;
 
-	SC = MCGameType(Level.Game).SandboxController;
+	//SC = MCGameType(Level.Game).SandboxController;
+	SC = self;
 	if (SC==none)
 	{
 		Log("MCZombieVolume->MCInitMonster->Failed to load MCGameType.SandboxController. So exit");
@@ -215,7 +261,7 @@ function InitMonster(KFMonster M, MCMonsterInfo MI)
 	{
 		M.ScreamDamage += 1;
 	}
-
+/*
 	if (true || MI.MonsterSize!=1.0)
 	{
 		F = FRand()*2.3; //Clamp(MI.MonsterSize, 0.1, 5);
@@ -238,6 +284,12 @@ function InitMonster(KFMonster M, MCMonsterInfo MI)
 		//C.Pawn.CrouchHeight  *= newPlayerSize;
 		//C.Pawn.CrouchRadius  *= newPlayerSize;
 	}
+*/
+	if (MI.Mesh.Length>0)
+		M.LinkMesh(MI.Mesh[Max(0,Rand(MI.Mesh.Length-1))]);
+	if (MI.Skins.Length>0)
+		for (i=0; i<MI.Skins.Length;i++)
+			M.Skins[i] = MI.Skins[i];
 }
 //--------------------------------------------------------------------------------------------------
 function ReadConfig()
@@ -248,6 +300,8 @@ function ReadConfig()
 	local MCSquadInfo	tSquadInfo;
 	local MCWaveInfo	tWaveInfo;
 	local MCMapInfo		tMapInfo;
+
+	//local string S,S2;
 
 	// чтение описаний монстров
 	Names = class'MCMonsterInfo'.static.GetNames();
@@ -269,6 +323,13 @@ function ReadConfig()
 				||tMonsterInfo.MonsterClass.default.Skins[0]==none) && tMonsterInfo.Skins.Length==0 )
 				GetDefaultSkins(tMonsterInfo.MonsterClass, tMonsterInfo.Skins);
 
+			/*S = tMonsterInfo.Serialize();
+			tMonsterInfo.UnSerialize(S);
+			S2 = tMonsterInfo.Serialize();
+			if (S == S2)
+				log("serialization works good");
+			else
+				log("bad :(");*/
 			Monsters[Monsters.Length] = tMonsterInfo;
 		}
 		else
@@ -555,56 +616,189 @@ simulated function PostNetReceive()
 	}
 }
 //--------------------------------------------------------------------------------------------------
+simulated function ExtractMonsters(string input)
+{
+	local int				i,j,n;
+	local string			MInfoStr, S;
+	local array<string>		iSplit;
+	local bool				bFound;
+	
+	LM("ExtractMonsters");
+
+	n = Split(input, rDataDelim, iSplit);
+	for (i=0;i<n;i++)
+	{
+		MInfoStr = iSplit[i];
+		S = class'MCMonsterInfo'.static.UnserializeName(MInfoStr);
+		LM("MCMonsterInfo for"@S@"received");
+		bFound=false;
+		for (j=0;j<Monsters.Length;j++)
+			if (string(Monsters[j].Name) ~= S)
+			{
+				bFound=true;
+				Monsters[j].Unserialize(MInfoStr);
+				LM("ExtractMonsters"@Monsters[j].Name);
+				// для KillMessages
+				if (Monsters[j].MNameObj==none)
+					Monsters[j].MNameObj = new(None, string(Monsters[j].Name)) class'MCMonsterNameObj';
+				Monsters[j].MNameObj.MonsterName  = Monsters[j].MonsterName;
+				Monsters[j].MNameObj.MonsterClass = Monsters[j].MonsterClass;
+
+				break;
+			}
+		if (bFound==false)
+		{
+			j = Monsters.Length;
+			Monsters.Insert(j,1);
+			Monsters[j] = new(None, S) class'MCMonsterInfo';
+			Monsters[j].Unserialize(MInfoStr);
+			LM("ExtractMonsters"@Monsters[j].Name);
+
+			// для KillMessages
+			if (Monsters[j].MNameObj==none)
+				Monsters[j].MNameObj = new(None, string(Monsters[j].Name)) class'MCMonsterNameObj';
+			Monsters[j].MNameObj.MonsterName  = Monsters[j].MonsterName;
+			Monsters[j].MNameObj.MonsterClass = Monsters[j].MonsterClass;
+		}
+	}
+}
+//--------------------------------------------------------------------------------------------------
 simulated function Tick(float dt)
 {
-	local MCMonsterList tMList;
+	local int bBadCRC;
+	local string S;
+	// alive monsters routine
+	local MCMonsterList	AM;
 	local int i;
-	if (Level != none && Level.NetMode != NM_Client)
+
+	if (Level != none)
 	{
-		if (GT == none)
+		if (Level.NetMode != NM_Client)
 		{
-			GT = MCGameType(Level.Game);
-			if ( GT == none )
-				return;
-		}
-		while ( PendingZombieVolumes.Length > 0 )
-		{
-			ReplaceZombieVolume(PendingZombieVolumes[0]);
-			PendingZombieVolumes.Remove(0,1);
-		}
-	}
-	// Обрабатываем прибывшие LinkMesh'и на клиенте
-	if (MListRevision != MList.ListRevision)
-	{
-		LM("Got new MList ListRevision"@MList.ListRevision);
-		MListRevision = MList.ListRevision;
-		for (tMList = MList; tMList != none; tMList = tMList.GetNext())
-		{
-			LM("tMList iteration");
-			if( tMList.revision != tMList.revisionClient
-				&& tMList.Mon != none
-				&& (tMList.MonMesh != none || tMList.Skins[0]!=none) )
+			if (GT == none)
 			{
-				tMList.revisionClient = tMList.revision;
-				LM("tMList"@string(tMList.Mon.Name)@"is new rev."@tMList.revision);
-				if (tMList.MonMesh!=none)
-				{
-					LM("tMList monmesh !=none");
-					tMList.Mon.LinkMesh(tMList.MonMesh);
-					LM("LinkMesh"@string(tMList.MonMesh));
-					//tMList.Mon.UpdateDefaultMesh(tMList.MonMesh);
-					//tMList.Mon.default.Mesh = tMList.MonMesh;
-				}
-				if (tMList.Mon.Mesh!=none && tMList.MonSkins[0]!=none)
-					for (i=0;i<arraycount(tMList.MonSkins); i++)
-						if (tMList.MonSkins[i]!=none)
-						{
-							tMList.Mon.Skins[i] = tMList.MonSkins[i];
-							LM("applyskin"@string(tMList.MonSkins[i]));
-						}
+				GT = MCGameType(Level.Game);
+				if ( GT == none )
+					return;
+			}
+			while ( PendingZombieVolumes.Length > 0 )
+			{
+				ReplaceZombieVolume(PendingZombieVolumes[0]);
+				PendingZombieVolumes.Remove(0,1);
 			}
 		}
+		
+		if (Level.NetMode!=NM_DedicatedServer)
+		{
+			if (RDataMonstersRevisionClient != RDataMonstersRevisionServer
+				&& RDataMonsters!=none)
+			{
+				S = RDataMonsters.GetString(bBadCRC);
+				LM("Tick: Got RDataMonsters"@S);
+				if (bBadCRC==0 && Len(S)>0)
+				{
+					RDataMonstersRevisionClient = RDataMonstersRevisionServer;
+					ExtractMonsters(S);
+				}
+			}
+			
+			for (AM = AliveMonsters; AM!=none; AM = AM.GetNext())
+			{
+				if( AM.bDeleted
+					|| Len(AM.MonsterInfoName)==0
+					|| (AM.Monster==none && AM.Controller==none) )
+					continue;
+				if (AM.revisionClient != AM.revision)
+				{
+					for (i=0;i<Monsters.Length;i++)
+						if ( AM.MonsterInfoName ~= string(Monsters[i].Name) )
+						{
+							LM("Found AliveMonster to Init. MonsterInfo"@AM.MonsterInfoName@"Monster"@AM.Monster.Name);
+							if (AM.Monster!=none)
+								InitMonster(AM.Monster, Monsters[i]);
+							else
+								InitMonster(KFMonster(AM.Controller.Pawn), Monsters[i]);
+							AM.revisionClient = AM.revision;
+						}
+				}
+			}
+		}
+	/*	// Обрабатываем прибывшие LinkMesh'и на клиенте
+		if (MListRevision != MList.ListRevision)
+		{
+			LM("Got new MList ListRevision"@MList.ListRevision);
+			MListRevision = MList.ListRevision;
+			for (tMList = MList; tMList != none; tMList = tMList.GetNext())
+			{
+				LM("tMList iteration");
+				if( tMList.revision != tMList.revisionClient
+					&& tMList.Mon != none
+					&& (tMList.MonMesh != none || tMList.Skins[0]!=none) )
+				{
+					tMList.revisionClient = tMList.revision;
+					LM("tMList"@string(tMList.Mon.Name)@"is new rev."@tMList.revision);
+					if (tMList.MonMesh!=none)
+					{
+						LM("tMList monmesh !=none");
+						tMList.Mon.LinkMesh(tMList.MonMesh);
+						LM("LinkMesh"@string(tMList.MonMesh));
+						//tMList.Mon.UpdateDefaultMesh(tMList.MonMesh);
+						//tMList.Mon.default.Mesh = tMList.MonMesh;
+					}
+					if (tMList.Mon.Mesh!=none && tMList.MonSkins[0]!=none)
+						for (i=0;i<arraycount(tMList.MonSkins); i++)
+							if (tMList.MonSkins[i]!=none)
+							{
+								tMList.Mon.Skins[i] = tMList.MonSkins[i];
+								LM("applyskin"@string(tMList.MonSkins[i]));
+							}
+				}
+			}
+		}
+	*/
 	}
+}
+//--------------------------------------------------------------------------------------------------
+function MCMonsterInfo GetMonInfo(KFMonster M, Controller C)
+{
+	local int i;
+	local MCMonsterList ML;
+	
+	ML = AliveMonsters.Find(M, C, M.Name);
+	if (ML==none)
+		return none;
+	
+	for (i=0;i<Monsters.Length;i++)
+		if (string(Monsters[i].Name) ~= ML.MonsterInfoName)
+			return Monsters[i];
+	return none;
+}
+//--------------------------------------------------------------------------------------------------
+simulated function WaveEnd()
+{
+	AliveMonsters.Clear();
+	KilledMonsters.Clear();
+}
+//--------------------------------------------------------------------------------------------------
+// Заполняем массив AliveMonsters, для сопоставления Monster и его MonsterInfo (для ReduceDamage)
+function NotifyMonsterSpawn(KFMonster Mon, MCMonsterInfo MonInfo)
+{
+	LM("NotifyMonsterSpawn"@string(MonInfo.Name));
+	AliveMonsters.Add(Mon, Mon.Controller, Mon.Name, string(MonInfo.Name));
+	SetTimer(0.1, false);
+	/*n = AliveMonsters.Length;
+	toLog("NotifyMonsterSpawn()"@string(MonInfo.Name));
+	AliveMonsters.Insert(n,1);
+	AliveMonsters[n].Monster			= Mon;
+	AliveMonsters[n].Controller			= Mon.Controller;
+	AliveMonsters[n].MonsterName		= Mon.Name;
+	AliveMonsters[n].MonsterInfoName	= MonInfo.Name;*/
+}
+//--------------------------------------------------------------------------------------------------
+function NotifyMonsterKill(KFMonster Mon, Controller Controller)
+{
+	KilledMonsters.Add(Mon, Controller, Mon.Name);
+	SetTimer(0.2, false);
 }
 //--------------------------------------------------------------------------------------------------
 function bool ReplaceZombieVolume(ZombieVolume CurZMV)
@@ -806,11 +1000,13 @@ function float GetNumPlayers(optional bool bOnlyAlive, optional bool bNotCountFa
 //--------------------------------------------------------------------------------------------------
 simulated function Timer()
 {
-	local int i,j,n;
+	local int i,j;
 	local MCRepInfo RInfo;
 	local KFMonster Mon;
 	local bool bFound;
-	local MCMonsterList.MListInput	MI;
+	//local MCMonsterList.MListInput	MI;
+	local MCMonsterList	AM, KM;
+	local array<Material> tSkins;
 
 	if ( MCLog != none )
 	{
@@ -819,39 +1015,41 @@ simulated function Timer()
 	}
 	SetTimer(15,false);
 
-	if (PendingMonsters.Length>0)
+	for (KM = KilledMonsters; KM!=none; KM = KM.GetNext())
 	{
-		for (i=0;i<PendingMonsters.Length;i++)
-		{
-			Mon = PendingMonsters[i];
-			bFound = false;
-			for (j=GT.AliveMonsters.Length-1; j>=0; j--)
-				if (Mon == GT.AliveMonsters[j].Mon)
-				{
-					if( GT.AliveMonsters[j].MonType.Mesh.Length>0
-						|| GT.AliveMonsters[j].MonType.Skins.Length>0 )
-					{
-						MI.Mesh = GT.AliveMonsters[j].MonType.Mesh;
-						for (n=0;n<GT.AliveMonsters[j].MonType.Skins.Length; n++)
-							if (GT.AliveMonsters[j].MonType.Skins[n]!=none)
-								MI.Skins[n] = GT.AliveMonsters[j].MonType.Skins[n];
-						/*n = Rand(GT.AliveMonsters[j].MonType.Mesh.Length-1);
-						n = Max(0,n);*/
-						//MList.AddMInfo(Mon, GT.AliveMonsters[j].MonType/*GT.AliveMonsters[j].MonType.Mesh[n]*/);
-					}
-					bFound=true;
-					break;
-				}
-			if (bFound==false) // только для монстров, заспавленных не через MCZombieVolume
-			{
-				MI.Mesh[0] = GetDefaultMesh(Mon.Class);
-				GetDefaultSkins(Mon.Class, MI.Skins);
-			}
-			if (MI.Mesh[0]!=none || MI.Skins[0]!=none)
-				MList.Add(Mon, MI);
-		}
-		PendingMonsters.Remove(0,PendingMonsters.Length);
+		if (KM.bDeleted)
+			continue;
+		AliveMonsters.Del(KM.Monster, KM.Controller, KM.MonsterName);
+		KilledMonsters.Del(KM.Monster, KM.Controller, KM.MonsterName);
 	}
+	/* перенесено в тик
+	for (AM = AliveMonsters; AM!=none; AM = AM.GetNext())
+		if (AM.revisionClient != AM.revision)
+			for (i=0;i<Monsters.Length;i++)
+				if (AM.MonsterInfoName == Monsters[i].Name)
+				{
+					InitMonster(AM.Monster, Monsters[i]);
+					AM.revisionClient = AM.revision;
+				}*/
+
+	for (i=0;i<PendingMonsters.Length;i++)
+	{
+		Mon = PendingMonsters[i];
+		bFound = false;
+		// ищем в нашем массиве, если нет, это монстр не наш (картоделы) - юзаем дефалт меши и скины
+		if (AliveMonsters.Find(Mon, Mon.Controller, Mon.Name)==none)
+		{
+			if (Mon.Mesh==none)
+				Mon.LinkMesh(GetDefaultMesh(Mon.Class));
+			if (Mon.Skins[0]==none)
+			{
+				GetDefaultSkins(Mon.Class, tSkins);
+				for (j=0;j<tSkins.Length;j++)
+					Mon.Skins[j] = tSkins[j];
+			}
+		}
+	}
+	PendingMonsters.Remove(0,PendingMonsters.Length);
 
 	if (bWaveFundSystem)
 	{
@@ -1080,4 +1278,6 @@ defaultproperties
 	HealedToScoreCoeff = 5.00
 
 	bWaveFundSystem = false
+	
+	rDataDelim = "***"
 }
