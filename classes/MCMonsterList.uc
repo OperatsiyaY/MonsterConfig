@@ -2,10 +2,11 @@ class MCMonsterList	extends ReplicationInfo;
 
 var MCMonsterList Next;
 
+var MonsterConfig SandboxController;
 
 var KFMonster	Monster;
 var Controller	Controller;
-var Name		MonsterName;
+var string		MonsterName;
 var string		MonsterInfoName;
 var int			revision, revisionClient;
 var bool		bDeleted;
@@ -19,37 +20,52 @@ replication
 		Next, revision, ListRevision;
 }
 //--------------------------------------------------------------------------------------------------
+simulated function PostBeginPlay()
+{
+	SandboxController = MonsterConfig(Owner);
+	super.PostBeginPlay();
+}
 //--------------------------------------------------------------------------------------------------
-function Add(KFMonster M, Controller C, Name N, optional string MIName)
+function Add(KFMonster M, Controller C, optional string MIName)
 {
 	local MCMonsterList MList;
-	MList = Find(M, C, N);
+	MList = Find(M, C);
 	if (MList!=none)
-		SetMList(MList, M, C, N, MIName);
+		SetMList(MList, M, C, MIName);
 	else if (bDeleted)
-		SetMList(self, M, C, N, MIName);
+		SetMList(self, M, C, MIName);
 	else
 	{
 		if (Next==none)
 			Next = Spawn(class'MCMonsterList',Owner);
-		Next.Add(M, C, N, MIName);
+		Next.Add(M, C, MIName);
 	}
 }
 //--------------------------------------------------------------------------------------------------
-function SetMList(MCMonsterList MList, KFMonster M, Controller C, Name N, string MIName)
+function SetMList(MCMonsterList MList, KFMonster M, Controller C, string MIName)
 {
 	MList.Monster		= M;
 	MList.Controller	= C;
-	MList.MonsterName	= N;
-	MList.MonsterInfoName = MIName;
+	MList.MonsterName	= string(M);
+	if (Len(MIName)>0)
+		MList.MonsterInfoName = MIName;
 	MList.bDeleted		= false;
 	MList.revision++;
 }
 //--------------------------------------------------------------------------------------------------
-function Del(KFMonster M, Controller C, Name N)
+function Del(KFMonster M, Controller C, optional string N)
 {
-	if (Monster==M || Controller == C ||  MonsterName == N || Monster == none || Controller == none)
+	if( (M!=none && Monster==M)
+		|| (C!=none && Controller == C)
+		|| (Len(N)>0 && MonsterName == N)
+		/*|| Monster == none || Controller == none*/)
+	{
 		bDeleted=true;
+		Monster = none;
+		Controller = none;
+		MonsterName = "";
+		MonsterInfoName = "";
+	}
 	if (Next != none)
 		Next.Del(M, C, N);
 }
@@ -71,11 +87,11 @@ simulated function MCMonsterList GetNext()
 		return Next;
 }
 //--------------------------------------------------------------------------------------------------
-simulated function MCMonsterList Find(KFMonster M, optional Controller C, optional Name N, optional string MIName)
+simulated function MCMonsterList Find(KFMonster M, optional Controller C, optional string N, optional string MIName)
 {
 	if( (M!=none && Monster==M)
 		|| (C!=none && Controller==C)
-		|| (Len(string(N))>0 && MonsterName==N) )
+		|| (Len(N)>0 && MonsterName==N) )
 		return self;
 	else if (Next != none)
 		return Next.Find(M, C, N, MIName);

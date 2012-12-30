@@ -1,5 +1,7 @@
 Class MCRepInfo extends LinkedReplicationInfo;
 
+var MonsterConfig SandboxController; // чтобы из ClientKilledMonster иметь доступ к Monsters[i].MonsterName
+
 var float	WaveScore; // очки за текущую волну (используется при начислении денег)
 var float	GameScore; // очки за всю игру
 
@@ -10,9 +12,26 @@ var int		HealedStat;
 replication
 {
 	reliable if(ROLE == Role_Authority)
-		WaveScore, GameScore;
+		WaveScore, GameScore, ClientKilledMonster, SandboxController;
 }
 //--------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
+simulated function ClientKilledMonster( string MName, optional PlayerReplicationInfo KillerPRI )
+{
+	local int i;
+	local MCMonsterInfo	MInfo;
+
+	SandboxController.LM("ClientKilledMonster"@MName);
+	
+	for (i=0; i<SandboxController.Monsters.Length; i++)
+		if (SandboxController.Monsters[i].MonsterName ~= MName)
+		{
+			MInfo = SandboxController.Monsters[i];
+			break;
+		}
+	// TODO for standart monsters there is no MonsterInfo, so no messages
+	Level.GetLocalPlayerController().ReceiveLocalizedMessage(Class'MCKillsMessage ',,KillerPRI,,MInfo.MNameObj);
+}
 //--------------------------------------------------------------------------------------------------
 function PostBeginPlay()
 {

@@ -309,6 +309,9 @@ function bool AddSquad()
 		for(i=0; i<n; i++)
 			SpecSquads[i].Counter += numspawned;
 
+		if (SquadToSpawn.Length>0)
+			Timer();
+			
     	return true;
     }
     else
@@ -346,7 +349,7 @@ function MCSquadInfo GetRandomSquad()
 	if ( SquadsToPick.Length <= 0 )
 		SquadsToPickFill();
 
-	n = Rand(SquadsToPick.Length-1);
+	n = Rand(SquadsToPick.Length); // -1 убрал
 	Ret = SquadsToPick[n];
 	SquadsToPick.Remove(n,1);
 
@@ -371,7 +374,8 @@ function SquadsToPickFill()
 //--------------------------------------------------------------------------------------------------
 function bool SquadToMonsters(MCSquadInfo CurSquad, out array<MCMonsterInfo> Ret)
 {
-	local int i,n,c,j;
+	local int i,n,c,j, k;
+	local string RandomMonsterName;
 	local MCMonsterInfo CurMon;
 	Ret.Remove(0,Ret.Length);
 
@@ -386,9 +390,20 @@ function bool SquadToMonsters(MCSquadInfo CurSquad, out array<MCMonsterInfo> Ret
 
 	for(i=0; i<n; i++)
 	{
-		CurMon = SandboxController.GetMonster(CurSquad.Monster[i].MonsterName);
 		for(j=CurSquad.Monster[i].Num; j>0; j--)
-			Ret[c++] = CurMon;
+		{
+			k = Rand(CurSquad.Monster[i].MonsterName.Length);
+			k = Max(0,k);
+			RandomMonsterName = CurSquad.Monster[i].MonsterName[k];
+			CurMon = SandboxController.GetMonster(RandomMonsterName);
+			if (CurMon==none)
+			{
+				j++;
+				continue;
+			}
+			else
+				Ret[c++] = CurMon;
+		}
 	}
 	toLog("SquadToMonsters()->Returning"@Ret.Length@"monsters");
 
@@ -502,6 +517,9 @@ function ScoreKill(Controller Killer, Controller Other)
 		if (Killer.PlayerReplicationInfo.Score < 0)
 			Killer.PlayerReplicationInfo.Score = 0;
 	}
+
+	SandboxController.NotifyMonsterKill(KFMonster(Other.Pawn), Other);
+
     /* Begin Marco's Kill Messages DELETED */
 }
 //--------------------------------------------------------------------------------------------------
@@ -914,7 +932,7 @@ state MatchInProgress
 
 				if(nextSpawnSquad.length>0)
 				{
-                	NextMonsterTime = Level.TimeSeconds + 0.2;
+                	NextMonsterTime = Level.TimeSeconds;// + 0.2; // MODIFIED --------------------------------
 				}
 				else
                 {
@@ -1163,55 +1181,45 @@ function Killed(Controller Killer, Controller Killed, Pawn KilledPawn, class<Dam
 	local Controller C;
 	local KFMonster M;
 	local MCMonsterInfo MI;
+	local MCRepInfo RInfo;
 
 	M = KFMonster(KilledPawn);
 	if (M!=none)
 	{
-		//GetAliveMonsterInfo(M, Killed);
 		MI = SandboxController.GetMonInfo(KFMonster(KilledPawn), Killed);
-		if (MI==none)
+		/* Begin Marco's Kill Messages */
+		if( SandboxController.BroadcastKillmessagesMass < M.Mass
+			|| SandboxController.BroadcastKillmessagesHealth < M.HealthMax )
 		{
-			toLog("Killed->Failed to load Killed Monsterinfo with GetAliveMonsterInfo");
-		}
-		else if (MI!=none)
-		{
-			/* Begin Marco's Kill Messages */
-
-			if( Class'HUDKillingFloor'.Default.MessageHealthLimit<=M.HealthMax
-				|| Class'HUDKillingFloor'.Default.MessageMassLimit<=M.Mass )
-			{
-				for( C=Level.ControllerList; C!=None; C=C.nextController )
-					if( C.bIsPlayer && xPlayer(C)!=None )
-					{
-						toLog("ScoreKill->KillMessage for"@MI.MNameObj.MonsterName);
-						xPlayer(C).ReceiveLocalizedMessage(Class'MCKillsMessage',1,Killer.PlayerReplicationInfo, M.PlayerReplicationInfo,MI.MNameObj);
-					}
-			}
-			else
-				if( xPlayer(Killer)!=None )
+			for( C=Level.ControllerList; C!=None; C=C.nextController )
+				if( C.bIsPlayer && xPlayer(C)!=None )
 				{
-					toLog("ScoreKill->KillMessage for"@MI.MNameObj.MonsterName);
-					xPlayer(Killer).ReceiveLocalizedMessage(Class'MCKillsMessage',,, M.PlayerReplicationInfo,MI.MNameObj);
+					if (MI==none)
+						xPlayer(C).ReceiveLocalizedMessage(Class'KillsMessage',1,Killer.PlayerReplicationInfo,,KilledPawn.Class);
+					else
+					{
+						RInfo = SandboxController.GetMCRepInfo(C.Pawn.PlayerReplicationInfo);
+						if (RInfo!=none)
+							RInfo.ClientKilledMonster(MI.MonsterName, Killer.Pawn.PlayerReplicationInfo);
+					}
 				}
-			/* End Marco's Kill Messages */
-			 
-			SandboxController.NotifyMonsterKill(M, Killed);
-
-			/*DeadMonsters.Insert(0,1);
-			DeadMonsters[0].Mon = M;
-			DeadMonsters[0].Controller = Killed;
-			DeadMonsters[0].MName = M.Name;
-
-			SandboxController.MList.Del(M); // реплицируемый массив для LinkMesh на стороне клиента
-			*/
 		}
-
-		/*i = GetAliveMonsterIndex(M, Killed);
-		if ( i != -1 )
+		else
 		{
-			toLog("Tick->Clearing AliveMonsters for Monster:"@GetAliveMonsterInfo(M, Killed).MonsterName);
-			AliveMonsters.Remove(i,1);
-		}*/
+			if( xPlayer(Killer)!=None )
+			{
+				if (MI==none)
+					xPlayer(Killer).ReceiveLocalizedMessage(Class'KillsMessage',,,,KilledPawn.Class);
+				else
+				{
+					RInfo = SandboxController.GetMCRepInfo(Killer.Pawn.PlayerReplicationInfo);
+					if (RInfo!=none)
+						RInfo.ClientKilledMonster(MI.MonsterName);
+					else
+						toLog("Killed->KillMessage for Monster:"@MI.MNameObj.MonsterName@"RInfo not found for"@Killer.Pawn.PlayerReplicationInfo.PlayerName);
+				}
+			}
+		}
 	}
 	Super.Killed(Killer,Killed,KilledPawn,damageType);
 }

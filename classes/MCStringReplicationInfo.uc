@@ -6,6 +6,7 @@ var String Str;
 var MCStringReplicationInfo Next;
 var int length;
 var int revision;
+var int revisionClient;
 
 var bool bMenuStr;
 var PlayerController OwnerPC;
