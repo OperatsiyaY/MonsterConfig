@@ -101,7 +101,7 @@ event InitGame( string Options, out string Error )
  // Вызывается в SandboxController.PostBeginPlay()
 function PostInit(MonsterConfig Sender)
 {
-	toLog("PostInit");
+	//toLog("PostInit");
 	SandboxController = Sender;
 
 	// Инициализация
@@ -228,8 +228,10 @@ function bool AddSquad()
 	local int ZombiesAtOnceLeft;
 	local int TotalZombiesValue;
 	local int i,n;
+	local bool lDebug;
+	lDebug=false;
 
-	toLog("AddSquad() bGameEnded"@bGameEnded);
+	//toLog("AddSquad() bGameEnded"@bGameEnded);
 
 	if( LastZVol == none || SquadToSpawn.Length == 0 )
 	{
@@ -241,7 +243,7 @@ function bool AddSquad()
 		}
 		else
 		{
-			toLog("AddSquad()->Will spawn special squad");
+			if (lDebug) toLog("AddSquad()->Will spawn special squad");
 			CurrentSquad.bSpecialSquad = true;
 		}
 		SquadToMonsters(CurrentSquad,SquadToSpawn);
@@ -250,11 +252,11 @@ function bool AddSquad()
 		if( LastZVol != None )
 			LastSpawningVolume = LastZVol;
 	}
-	toLog("AddSquad()->CurrentSquad:"@string(CurrentSquad.Name)@"("$SquadToSpawn.Length$" monsters)");
+	if (lDebug) toLog("AddSquad()->CurrentSquad:"@string(CurrentSquad.Name)@"("$SquadToSpawn.Length$" monsters)");
 
 	if( LastZVol == None )
 	{
-		toLog("AddSquad()-> No ZombieVolume's found. So just return.");
+		if (lDebug) toLog("AddSquad()-> No ZombieVolume's found. So just return.");
 
 		// исключаем пропуск SpecialSquad'ов из-за временных проблем со спавном
 		if (!CurrentSquad.bSpecialSquad)
@@ -273,7 +275,7 @@ function bool AddSquad()
 
 	// How many zombies can we have left to spawn at once
     ZombiesAtOnceLeft = MaxMonsters - NumMonsters;
-	toLog("AddSquad()->We can spawn only ZombiesAtOnceLeft:"@ZombiesAtOnceLeft@"(MaxMonsters:"@MaxMonsters@"NumMonsters:"@NumMonsters@")");
+	if (lDebug) toLog("AddSquad()->We can spawn only ZombiesAtOnceLeft:"@ZombiesAtOnceLeft@"(MaxMonsters:"@MaxMonsters@"NumMonsters:"@NumMonsters@")");
 
 	if( MCZombieVolume(LastZVol).MCSpawnInHere(
 		SquadToSpawn,		// out массив MCMonsterInfo для спавна
@@ -287,7 +289,7 @@ function bool AddSquad()
 							// TODO - ставить тут true?
 	{
 		// спецсквады не считаются
-		toLog("AddSquad()->ZombiesSpawned:"@numspawned);
+		if (lDebug) toLog("AddSquad()->ZombiesSpawned:"@numspawned);
 		NumMonsters += numspawned;
 		WaveMonsters+= numspawned;
 
@@ -316,7 +318,7 @@ function bool AddSquad()
     }
     else
     {
-		toLog("AddSquad()->ZombiesSpawned: 0. So call TryToSpawnInAnotherVolume()");
+		if (lDebug) toLog("AddSquad()->ZombiesSpawned: 0. So call TryToSpawnInAnotherVolume()");
         TryToSpawnInAnotherVolume();
         return false;
     }
@@ -377,14 +379,16 @@ function bool SquadToMonsters(MCSquadInfo CurSquad, out array<MCMonsterInfo> Ret
 	local int i,n,c,j, k;
 	local string RandomMonsterName;
 	local MCMonsterInfo CurMon;
+	local bool lDebug;
+	lDebug = false;
 	Ret.Remove(0,Ret.Length);
 
-	toLog("SquadToMonsters()->CurSquad"@string(CurSquad.Name));
+	if (lDebug) toLog("SquadToMonsters()->CurSquad"@string(CurSquad.Name));
 
 	n = CurSquad.Monster.Length;
 	if ( n <= 0 )
 	{
-		toLog("SquadToMonsters()->CurSquad: no monsters specified. Squad:"@string(CurSquad.Name));
+		if (lDebug) toLog("SquadToMonsters()->CurSquad: no monsters specified. Squad:"@string(CurSquad.Name));
 		return false;
 	}
 
@@ -405,7 +409,7 @@ function bool SquadToMonsters(MCSquadInfo CurSquad, out array<MCMonsterInfo> Ret
 				Ret[c++] = CurMon;
 		}
 	}
-	toLog("SquadToMonsters()->Returning"@Ret.Length@"monsters");
+	if (lDebug) toLog("SquadToMonsters()->Returning"@Ret.Length@"monsters");
 
 	// TODO хак, чтобы не переписывать ВЕСЬ ТАЙМЕР!!!! так как в нем идет проверка
 	// на nextSpawnSquad.Length если отрят не смог заспавниться полностью, то NextSpawnTime ставится +0.1
@@ -485,7 +489,7 @@ function ScoreKill(Controller Killer, Controller Other)
 		if (SandboxController.bWaveFundSystem==false)
 		{	
 			//GetAliveMonsterInfo(Other, Other.Pawn);
-			tMonsterInfo = SandboxController.GetMonInfo(KFMonster(Other.Pawn), Other);
+			tMonsterInfo = SandboxController.GetMonInfo(Other);
 
 			if( tMonsterInfo==none || tMonsterInfo.RewardScore == tMonsterInfo.default.RewardScore )
 			{
@@ -518,7 +522,7 @@ function ScoreKill(Controller Killer, Controller Other)
 			Killer.PlayerReplicationInfo.Score = 0;
 	}
 
-	SandboxController.NotifyMonsterKill(KFMonster(Other.Pawn), Other);
+	SandboxController.NotifyMonsterKill(Other);
 
     /* Begin Marco's Kill Messages DELETED */
 }
@@ -1123,10 +1127,10 @@ function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector Hi
 	local MCMonsterInfo MonInfo;
 	local MCRepInfo tMCRepInfo;
 
-	toLog("ReduceDamage()->Orig:"@Damage);
+	//toLog("ReduceDamage()->Orig:"@Damage);
 	M = KFMonster(Injured);
 	if (M!=none)
-		MonInfo = SandboxController.GetMonInfo(M, M.Controller);
+		MonInfo = SandboxController.GetMonInfo(M.Controller);
 	if (MonInfo!=none)
 	{
 		n = MonInfo.Resist.Length;
@@ -1137,7 +1141,7 @@ function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector Hi
 					&& ClassIsChildOf( DamageType, MonInfo.Resist[i].DamType) ) )
 			{
 				Damage = round(float(Damage) * MonInfo.Resist[i].Coeff);
-				toLog("ReduceDamage()->Reduced:"@Damage@"MonInfo"@string(MonInfo.Name));
+				//toLog("ReduceDamage()->Reduced:"@Damage@"MonInfo"@string(MonInfo.Name));
 				break;
 			}
 		}
@@ -1186,7 +1190,7 @@ function Killed(Controller Killer, Controller Killed, Pawn KilledPawn, class<Dam
 	M = KFMonster(KilledPawn);
 	if (M!=none)
 	{
-		MI = SandboxController.GetMonInfo(KFMonster(KilledPawn), Killed);
+		MI = SandboxController.GetMonInfo(Killed);
 		/* Begin Marco's Kill Messages */
 		if( SandboxController.BroadcastKillmessagesMass < M.Mass
 			|| SandboxController.BroadcastKillmessagesHealth < M.HealthMax )

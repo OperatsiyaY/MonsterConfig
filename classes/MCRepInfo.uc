@@ -21,7 +21,7 @@ simulated function ClientKilledMonster( string MName, optional PlayerReplication
 	local int i;
 	local MCMonsterInfo	MInfo;
 
-	SandboxController.LM("ClientKilledMonster"@MName);
+	//SandboxController.LM("ClientKilledMonster"@MName);
 	
 	for (i=0; i<SandboxController.Monsters.Length; i++)
 		if (SandboxController.Monsters[i].MonsterName ~= MName)
