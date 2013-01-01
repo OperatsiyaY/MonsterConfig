@@ -1,6 +1,6 @@
 class MCMonsterList	extends ReplicationInfo;
 
-var MCMonsterList Next;
+var MCMonsterList Prev,Next;
 
 var MonsterConfig SandboxController;
 
@@ -11,7 +11,7 @@ var string		MonsterInfoName;
 var int			revision, revisionClient;
 var bool		bDeleted;
 
-var int			ListRevision, ListRevisionClient;
+var int			listRevision, listRevisionClient;
 
 replication
 {
@@ -37,9 +37,13 @@ function Add(KFMonster M, Controller C, optional string MIName)
 	else
 	{
 		if (Next==none)
+		{
 			Next = Spawn(class'MCMonsterList',Owner);
+			Next.Prev = self;
+		}
 		Next.Add(M, C, MIName);
 	}
+	listRevision++;
 }
 //--------------------------------------------------------------------------------------------------
 function SetMList(MCMonsterList MList, KFMonster M, Controller C, string MIName)
