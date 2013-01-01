@@ -1326,18 +1326,6 @@ simulated function Timer()
 	}
 	SetTimer(15,false);*/
 	
-	/*
-	// Удаляем убитых монстров из AliveMonsters
-	for (KM = KilledMonsters; KM!=none; KM = KM.GetNext())
-	{
-		if (KM.bDeleted)
-			continue;
-		LM("Delete killed"@KM.MonsterName);
-		AliveMonsters.Del(KM.Controller);
-		KM.bDeleted = true;
-		KilledMonsters.Del(KM.Controller);
-	}*/
-	
 	// НА СЕРВЕРЕ
 	if (Level!=none && Level.NetMode != NM_Client)
 	{
@@ -1362,7 +1350,7 @@ simulated function Timer()
 					PendingPlayers.Remove(i,1);
 			}
 		}
-		if (PendingPlayers.Length>0) //PendingPlayers.Length = 0;
+		if (PendingPlayers.Length>0)
 			SetTimer(0.1,false);
 		
 		// НА СЕРВЕРЕ Фиксим меш и скин не наших монстров, (например, сталкеры и флешки на карте сталкер)

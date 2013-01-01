@@ -25,7 +25,7 @@ simulated function PostBeginPlay()
 //--------------------------------------------------------------------------------------------------
 simulated function Tick( float dt )
 {
-	local int i,n;
+	/*local int i,n;
 	if( revisionClient != revision )
 	{
 		if ( Controller!=none && bDeleted==false )
@@ -47,7 +47,7 @@ simulated function Tick( float dt )
 			bDeletedClient = bDeleted;
 			revisionClient = revision;
 		}
-	}
+	}*/
 }
 //--------------------------------------------------------------------------------------------------
 function int CountAll()
