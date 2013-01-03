@@ -3,51 +3,48 @@ class MCMonsterList	extends ReplicationInfo;
 var MCMonsterList Prev,Next;
 var MonsterConfig SandboxController;
 
+var KFMonster	Monster;
 var Controller	Controller;
-var string		MonsterInfoName;
+var String		MonsterInfoName; // репликаци€ name не работает как надо. на клиенте все реплицированные Name == "TexEnvMap"
 var bool		bDeleted, bDeletedClient;
-var int			revision, revisionClient;
+var byte		revision, revisionClient;
 
-var int			listRevision, listRevisionClient;
+var byte		listRevision, listRevisionClient;
+var Name clearName;
 
 replication
 {
+	reliable if (bNetInitial && ROLE == ROLE_Authority)
+		SandboxController;
 	reliable if (ROLE == ROLE_Authority)
-		Controller, MonsterInfoName, bDeleted,
-		Prev, Next, revision, listRevision;
+		bDeleted;
+	reliable if (bDeleted==false && ROLE == ROLE_Authority)
+		Monster, MonsterInfoName, revision;
+		/*Next, revision, listRevision;*/
+		/*Controller,*/
+		/*Prev,*/
 }
 //--------------------------------------------------------------------------------------------------
-simulated function PostBeginPlay()
+function PostBeginPlay()
 {
 	super.PostBeginPlay();
 	SandboxController = MonsterConfig(Owner);
 }
 //--------------------------------------------------------------------------------------------------
-simulated function Tick( float dt )
+simulated function PostNetReceive()
 {
-	/*local int i,n;
-	if( revisionClient != revision )
+	if (bDeleted && bDeletedClient!=bDeleted)
 	{
-		if ( Controller!=none && bDeleted==false )
-		{
-			n = SandboxController.AliveMonstersCache.Length;
-			SandboxController.AliveMonstersCache.Insert(n,1);
-			SandboxController.AliveMonstersCache[n].Mon	= KFMonster(Controller.Pawn);
-			SandboxController.AliveMonstersCache[n].Controller = Controller;
-			SandboxController.AliveMonstersCache[n].MonsterInfoName = MonsterInfoName;
-			SandboxController.AliveMonstersCache[n].revision = revision;
-			revisionClient = revision;
-		}
-		if( bDeleted && bDeletedClient != bDeleted )
-		{
-			n = SandboxController.AliveMonstersCache.Length;
-			for (i = SandboxController.AliveMonstersCache.Length-1; i>=0; --i)
-				if (SandboxController.AliveMonstersCache[i].Controller == Controller)
-					SandboxController.AliveMonstersCache.Remove(i,1);
-			bDeletedClient = bDeleted;
-			revisionClient = revision;
-		}
-	}*/
+		Controller = none;
+		Monster = none;
+		MonsterInfoName = "";
+		bDeletedClient = bDeleted;
+	}
+	else if (!bDeleted && revision!=revisionClient && Monster!=none && Len(MonsterInfoName)>0)
+	{
+		SandboxController.InitMonster(Monster, MonsterInfoName);
+		revisionClient = revision;
+	}
 }
 //--------------------------------------------------------------------------------------------------
 function int CountAll()
@@ -68,16 +65,19 @@ function int Count()
 	return n;
 }
 //--------------------------------------------------------------------------------------------------
-function Add(Controller C, optional string MIName)
+function Add(Controller C, string MIName)
 {
-/*	MList = Find(C);
-	if (MList!=none)
-	{
-		SandboxController.LM("NASHOL 4OTO!!!!!!!!!!!!!!!");
-		SetMList(MList, C, MIName);
-	}*/
 	if (Controller == C || bDeleted)
-		SetMList(self, C, MIName);
+	{
+		Controller	= C;
+		Monster		= KFMonster(C.Pawn);
+		if (Len(MIName)>0)
+			MonsterInfoName = MIName;
+		bDeleted = false;
+		revision++;
+		SandboxController.InitMonster(Monster, MonsterInfoName);
+		NetUpdateTime = Level.TimeSeconds-1.f;
+	}
 	else
 	{
 		if (Next==none)
@@ -88,16 +88,6 @@ function Add(Controller C, optional string MIName)
 		Next.Add(C, MIName);
 	}
 	listRevision++;
-	NetUpdateTime = Level.TimeSeconds-1.f;
-}
-//--------------------------------------------------------------------------------------------------
-function SetMList(MCMonsterList MList, Controller C, string MIName)
-{
-	MList.Controller	= C;
-	if (Len(MIName)>0)
-		MList.MonsterInfoName = MIName;
-	MList.bDeleted		= false;
-	MList.revision++;
 }
 //--------------------------------------------------------------------------------------------------
 function Del(Controller C)
@@ -108,28 +98,32 @@ function Del(Controller C)
 	CacheNext = Next;
 	if( C!=none && Controller==C )
 	{
-		if (Prev!=none && Next != none) // первый элемент, на который ссылкаетс€ SandboxController, перемещать в коенц нельз€
+		// удал€ем
+		Controller = none;
+		MonsterInfoName = "";//clearName;
+		revision++;
+		revisionClient = revision;
+		bDeleted=true;
+		//NetUpdateTime = Level.TimeSeconds-1.f;
+		
+		// перемещаем в конец
+		if (Prev!=none)
 		{
-			MList = Next.GetFirstDeleted();
-			if ( MList!=none && MList != Next ) // если последний, или и так попор€дку всЄ, тоже
+			MList = GetLast();
+			if ( MList != self ) // если последний, или и так попор€дку всЄ, тоже
 			{
 				// выдергиваем себ€ из списка
 				Prev.Next = Next;
 				Next.Prev = Prev;
 				
-				// ставим себ€ перед первым найденным удалЄнным элементом
-				Next = MList;
-				Prev = MList.Prev;
-
-				MList.Prev = self;
+				// ставим себ€ после последнего найденного элемента
+				Next = none;
+				Prev = MList;
+				
+				MList.Next = self;
 			}
 		}
-		if (Prev!=none)
-			bDeleted=true;
-		Controller = none;
-		MonsterInfoName = "";
-		revision++;
-		NetUpdateTime = Level.TimeSeconds-1.f;
+
 	}
 	else if (CacheNext!=none && !CacheNext.bDeleted)  // else возможно убрать, чтобы числил весь лист от C
 		CacheNext.Del(C);
@@ -139,9 +133,20 @@ function Clear()
 {
 	bDeleted = true;
 	Controller = none;
-	MonsterInfoName = "";
+	MonsterInfoName = "";//clearName;
 	if (Next != none /*&& !Next.bDeleted*/)
 		Next.Clear();
+}
+//--------------------------------------------------------------------------------------------------
+function MCMonsterList GetLast()
+{
+	local MCMonsterList MList;
+	for (MList=self; MList!=none; MList=MList.Next)
+		if (MList.Next==none)
+			return MList;
+	
+	log("Error: MonsterConfig->MCMonsterList error in GetLast()");
+	return none;
 }
 //--------------------------------------------------------------------------------------------------
 // внутренн€€ функци€ дл€ работы Del
@@ -182,5 +187,8 @@ simulated function toLog(string M)
 defaultproperties
 {
 	bDeleted=true
-	bNetNotify=true;
+	
+	bNetNotify=true
+	RemoteROLE=ROLE_SimulatedProxy
+	bAlwaysRelevant=true
 }

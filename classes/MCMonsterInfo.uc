@@ -36,7 +36,7 @@ var config array<Mesh>			Mesh;
 var config array<Material>		Skins;
 
 // рабочие
-var MCMonsterNameObj			MNameObj; // для MCKillsMessage
+//var MCMonsterNameObj			MNameObj; // для MCKillsMessage
 var const string delim;
 var name NameConversionHack;
 //--------------------------------------------------------------------------------------------------

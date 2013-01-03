@@ -231,11 +231,9 @@ function bool AddSquad()
 	local bool lDebug;
 	lDebug=false;
 
-	//toLog("AddSquad() bGameEnded"@bGameEnded);
-
 	if( LastZVol == none || SquadToSpawn.Length == 0 )
 	{
-		CurrentSquad = GetSpecialSquad();
+		CurrentSquad = GetSpecialSquad(); // Counter Special сквада обнулился внутри уже тут
 		if ( CurrentSquad == none )
 		{
 			CurrentSquad = GetRandomSquad();
@@ -269,7 +267,6 @@ function bool AddSquad()
 			// на обфускацию
 			nextSpawnSquad.Length = SquadToSpawn.Length;
 		}
-
 		return false;
 	}
 
@@ -288,11 +285,19 @@ function bool AddSquad()
 							// если true - пытается заспавнить во всех SpawnPoints волума
 							// TODO - ставить тут true?
 	{
-		// спецсквады не считаются
 		if (lDebug) toLog("AddSquad()->ZombiesSpawned:"@numspawned);
-		NumMonsters += numspawned;
-		WaveMonsters+= numspawned;
+		
+		// спецсквады не считаются
+		if (!CurrentSquad.bSpecialSquad)
+		{
+			NumMonsters += numspawned;
+			WaveMonsters+= numspawned;
 
+			// обновляем counter'ы для SpecSquads
+			n = SpecSquads.Length;
+			for(i=0; i<n; i++)
+				SpecSquads[i].Counter += numspawned;
+		}
 
 		// TODO хак, чтобы не переписывать ВЕСЬ ТАЙМЕР!!!! так как в нем идет проверка
 		// на nextSpawnSquad.Length если отрят не смог заспавниться полностью, то NextSpawnTime ставится +0.1
@@ -302,16 +307,8 @@ function bool AddSquad()
 		// можно даже заполнять его class<KFMonster>, взятыми из SquadToSpawn, если нужно
 		nextSpawnSquad.Length = SquadToSpawn.Length;
 
-		// перенесено внутрь MCSpawnInHere - там мы удаляем именно тех, кого получилось заспавнить,
-		// а не первых numspawned в массиве
-		// SquadToSpawn.Remove(0, numspawned);
-
-		// обновляем counter'ы для SpecSquads
-		n = SpecSquads.Length;
-		for(i=0; i<n; i++)
-			SpecSquads[i].Counter += numspawned;
-
-		if (SquadToSpawn.Length>0)
+		// тут же вызываем таймер, чтобы поскорее заспавнить оставшихся
+		if (SquadToSpawn.Length>0) 
 			Timer();
 			
     	return true;
@@ -326,19 +323,21 @@ function bool AddSquad()
 //--------------------------------------------------------------------------------------------------
 function MCSquadInfo GetSpecialSquad()
 {
-	local int i,n;
-	n = SpecSquads.Length;
-	for(i=0; i<n; i++)
+	local int i;
+	local bool lDebug;
+	lDebug = false;
+
+	for(i=SpecSquads.Length-1; i>=0; --i)
 	{
-		if ( SpecSquads[i].CurFreq <= SpecSquads[i].Counter/* + SpecSquads[i].InitialCounter*/ )
+		if ( SpecSquads[i].CurFreq <= SpecSquads[i].Counter )
 		{
 			SpecSquads[i].Counter = 0;
 			SpecSquads[i].CurFreq = SpecSquads[i].Freq + Rand(SpecSquads[i].FreqRand+1);
-			toLog("GetSpecialSquad()->Returning"@string(SpecSquads[i].Name));
+			if (lDebug) toLog("GetSpecialSquad()->Returning"@string(SpecSquads[i].Name));
 			return SpecSquads[i];
 		}
 	}
-	toLog("GetSpecialSquad()->Returning"@none);
+	if (lDebug) toLog("GetSpecialSquad()->Returning"@none);
 	return none;
 }
 //--------------------------------------------------------------------------------------------------
@@ -351,36 +350,36 @@ function MCSquadInfo GetRandomSquad()
 	if ( SquadsToPick.Length <= 0 )
 		SquadsToPickFill();
 
-	n = Rand(SquadsToPick.Length); // -1 убрал
+	n = Rand(SquadsToPick.Length); // -1 убрал т.к. Rand возвращает уже с -1
 	Ret = SquadsToPick[n];
 	SquadsToPick.Remove(n,1);
 
 	return Ret;
 }
 //--------------------------------------------------------------------------------------------------
-// заполняем массив SquadsToPick, из которого будем дёргать CurrentSquad'ы
+// заполняем массив SquadsToPick, из которого будем рандомно дёргать CurrentSquad'ы
 function SquadsToPickFill()
 {
 	local int i;
+	local bool lDebug;
+	lDebug = false;
 	SquadsToPick.Remove(0,SquadsToPick.Length);
 
-	i = Squads.Length;
-	while ( i-- > 0 )
-	{
-		SquadsToPick.Insert(0,1);
-		SquadsToPick[0] = Squads[i];
-	}
+	SquadsToPick.Insert(0,Squads.Length);
+	for (i=Squads.Length-1; i>=0; --i)
+		SquadsToPick[i] = Squads[i];
 
-	toLog("SquadsToPickFill()->SquadsToPick count:"@SquadsToPick.Length);
+	if (lDebug) toLog("SquadsToPickFill()->SquadsToPick count:"@SquadsToPick.Length);
 }
 //--------------------------------------------------------------------------------------------------
 function bool SquadToMonsters(MCSquadInfo CurSquad, out array<MCMonsterInfo> Ret)
 {
-	local int i,n,c,j, k;
+	local int i,n,c,j,k,ntry;
 	local string RandomMonsterName;
 	local MCMonsterInfo CurMon;
 	local bool lDebug;
 	lDebug = false;
+	
 	Ret.Remove(0,Ret.Length);
 
 	if (lDebug) toLog("SquadToMonsters()->CurSquad"@string(CurSquad.Name));
@@ -392,19 +391,20 @@ function bool SquadToMonsters(MCSquadInfo CurSquad, out array<MCMonsterInfo> Ret
 		return false;
 	}
 
-	for(i=0; i<n; i++)
+	// перебор всех монстров в скваде
+	for(i=n-1; i>=0; --i)
 	{
-		for(j=CurSquad.Monster[i].Num; j>0; j--)
+		// добавляем указанное num число монстров
+		ntry=0;
+		for(j=CurSquad.Monster[i].Num; j>0; --j)
 		{
+			// в скваде могут быть указаны несколько MonsterName, берем их рандомно
 			k = Rand(CurSquad.Monster[i].MonsterName.Length);
 			k = Max(0,k);
 			RandomMonsterName = CurSquad.Monster[i].MonsterName[k];
 			CurMon = SandboxController.GetMonster(RandomMonsterName);
 			if (CurMon==none)
-			{
-				j++;
-				continue;
-			}
+				{j++;ntry++;if (ntry>CurSquad.Monster[i].Num*2) break; continue;} // монстр не валидный, пробуем еще раз
 			else
 				Ret[c++] = CurMon;
 		}
@@ -523,8 +523,7 @@ function ScoreKill(Controller Killer, Controller Other)
 	}
 
 	SandboxController.NotifyMonsterKill(Other);
-
-    /* Begin Marco's Kill Messages DELETED */
+    /* Marco's Kill Messages перенесены из ScoreKill в Killed, т.к. в Killed KFMonsterPawn еще жив */
 }
 //--------------------------------------------------------------------------------------------------
 function bool RewardWithFundSystem()
@@ -665,12 +664,11 @@ state MatchInProgress
  	function DoWaveEnd()
 	{
 		super.DoWaveEnd();
+
 		if (SandboxController.bWaveFundSystem)
 			SandboxController.PerkStats.SaveConfig();
 
-		SandboxController.WaveEnd();
-		//DeadMonsters.Remove(0,DeadMonsters.Length);
-		//AliveMonsters.Remove(0,AliveMonsters.Length);
+		SandboxController.WaveEnd(); // очищается массив AliveMonsters
 	}
 	//----------------------------------------------------------------------------------------------
 	// определяем через какое время спавнить монстров
@@ -680,6 +678,8 @@ state MatchInProgress
 	{
 		local float NextSpawnTime;
 		local float SineMod, F, F2, F3;
+		local bool lDebug;
+		lDebug = false;
 
 		SineMod = 1.0 - Abs(sin(WaveTimeElapsed * SineWaveFreq));
 
@@ -696,7 +696,7 @@ state MatchInProgress
 
 		NextSpawnTime += SineMod * (NextSpawnTime * 2);
 
-		toLog("CalcNextSquadSpawnTime()->WaveTimeElapsed:"@WaveTimeElapsed@"SineMod:"@SineMod@"NextSpawnTime:"@NextSpawnTime);
+		if (lDebug) toLog("CalcNextSquadSpawnTime()->WaveTimeElapsed:"@WaveTimeElapsed@"SineMod:"@SineMod@"NextSpawnTime:"@NextSpawnTime);
 
 		return NextSpawnTime;
 	}
@@ -1119,15 +1119,17 @@ function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
 	return SandboxController.GetNextWaveInfo(CurWave);
 }
 //--------------------------------------------------------------------------------------------------
-// Считает коэффициент дамага монстру исходя из MonsterInfo->Resist
+// Обработка резистов монстров + считаем очки при bWaveFundSystem
 function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector HitLocation, out vector Momentum, class<DamageType> DamageType)
 {
 	local int i,n;
 	local KFMonster M;
 	local MCMonsterInfo MonInfo;
 	local MCRepInfo tMCRepInfo;
+	local bool lDebug;
+	lDebug=false;
 
-	//toLog("ReduceDamage()->Orig:"@Damage);
+	if (lDebug) toLog("ReduceDamage() Original Damage:"@Damage);
 	M = KFMonster(Injured);
 	if (M!=none)
 		MonInfo = SandboxController.GetMonInfo(M.Controller);
@@ -1141,7 +1143,7 @@ function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector Hi
 					&& ClassIsChildOf( DamageType, MonInfo.Resist[i].DamType) ) )
 			{
 				Damage = round(float(Damage) * MonInfo.Resist[i].Coeff);
-				//toLog("ReduceDamage()->Reduced:"@Damage@"MonInfo"@string(MonInfo.Name));
+				if (lDebug) toLog("ReduceDamage() Reduced Damage:"@Damage@"MonInfo"@string(MonInfo.Name));
 				break;
 			}
 		}
@@ -1166,146 +1168,59 @@ function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector Hi
 	return Damage;
 }
 //--------------------------------------------------------------------------------------------------
-/*// Заполняем массив AliveMonsters, для сопоставления Monster и его MonsterInfo (для ReduceDamage)
-function NotifyMonsterSpawn(KFMonster Mon, MCMonsterInfo MonInfo)
-{
-	local int n;
-	n = AliveMonsters.Length;
-	toLog("NotifyMonsterSpawn()"@string(MonInfo.Name));
-	AliveMonsters.Insert(n,1);
-	AliveMonsters[n].Mon		= Mon;
-	AliveMonsters[n].Controller = Mon.Controller;
-	AliveMonsters[n].MName		= Mon.Name;
-	AliveMonsters[n].MonType	= MonInfo;
-}*/
-//--------------------------------------------------------------------------------------------------
+/* Функция переопределена для правильной работы KillMessages (если монстр имеет MonsterInfo, 
+ * то высвечивается его имя)																		*/
 function Killed(Controller Killer, Controller Killed, Pawn KilledPawn, class<DamageType> damageType)
 {
-	//local int i;
 	local Controller C;
 	local KFMonster M;
 	local MCMonsterInfo MI;
 	local MCRepInfo RInfo;
 
 	M = KFMonster(KilledPawn);
-	if (M!=none)
+	if (M!=none && PlayerController(Killer) != none && Killer.PlayerReplicationInfo != none && SandboxController!=none )
 	{
 		MI = SandboxController.GetMonInfo(Killed);
-		/* Begin Marco's Kill Messages */
+		if (MI==none)
+			SandboxController.LM("Killed KillMessages - MonserInfo not found for"@string(KilledPawn.Name));
+
 		if( SandboxController.BroadcastKillmessagesMass < M.Mass
-			|| SandboxController.BroadcastKillmessagesHealth < M.HealthMax )
+			|| SandboxController.BroadcastKillmessagesHealth < M.HealthMax)
 		{
 			for( C=Level.ControllerList; C!=None; C=C.nextController )
-				if( C.bIsPlayer && xPlayer(C)!=None )
+				if( C.bIsPlayer && PlayerController(C) != none && C.PlayerReplicationInfo != none )
 				{
 					if (MI==none)
-						xPlayer(C).ReceiveLocalizedMessage(Class'KillsMessage',1,Killer.PlayerReplicationInfo,,KilledPawn.Class);
+						PlayerController(C).ReceiveLocalizedMessage(Class'KillsMessage',1,Killer.PlayerReplicationInfo,,KilledPawn.Class);
 					else
 					{
-						RInfo = SandboxController.GetMCRepInfo(C.Pawn.PlayerReplicationInfo);
+						//SandboxController.LM("Broadcast KillMessage for:"@C.PlayerReplicationInfo.PlayerName);
+						RInfo = SandboxController.GetMCRepInfo(C.PlayerReplicationInfo);
 						if (RInfo!=none)
-							RInfo.ClientKilledMonster(MI.MonsterName, Killer.Pawn.PlayerReplicationInfo);
+							RInfo.ClientKilledMonster(string(MI.Name), Killer.PlayerReplicationInfo);
+						else
+							SandboxController.LM("Killed->KillMessage for Monster:"@MI.MonsterName@"RInfo not found for"@C.PlayerReplicationInfo.PlayerName);
 					}
 				}
 		}
 		else
 		{
-			if( xPlayer(Killer)!=None )
+			if (MI==none)
+				xPlayer(Killer).ReceiveLocalizedMessage(Class'KillsMessage',,,,KilledPawn.Class);
+			else
 			{
-				if (MI==none)
-					xPlayer(Killer).ReceiveLocalizedMessage(Class'KillsMessage',,,,KilledPawn.Class);
+				RInfo = SandboxController.GetMCRepInfo(Killer.PlayerReplicationInfo);
+				if (RInfo!=none)
+					RInfo.ClientKilledMonster(string(MI.Name));
 				else
-				{
-					RInfo = SandboxController.GetMCRepInfo(Killer.Pawn.PlayerReplicationInfo);
-					if (RInfo!=none)
-						RInfo.ClientKilledMonster(MI.MonsterName);
-					else
-						toLog("Killed->KillMessage for Monster:"@MI.MNameObj.MonsterName@"RInfo not found for"@Killer.Pawn.PlayerReplicationInfo.PlayerName);
-				}
+					SandboxController.LM("Killed->KillMessage for Monster:"@MI.MonsterName@"RInfo not found for"@Killer.PlayerReplicationInfo.PlayerName);
 			}
 		}
 	}
 	Super.Killed(Killer,Killed,KilledPawn,damageType);
 }
 //--------------------------------------------------------------------------------------------------
-function Tick( float dt )
-{
-	//local int i,j;
-	Super.Tick(dt);
-
-	/*for (i=0;i<DeadMonsters.Length;i++)
-	{
-		j = GetAliveMonsterIndex(DeadMonsters[i].Controller, DeadMonsters[i].Mon, DeadMonsters[i].MName);
-		if ( j != -1 )
-		{
-			toLog("Tick->Clearing AliveMonsters for Monster:"@GetAliveMonsterInfo(DeadMonsters[i].Controller, DeadMonsters[i].Mon).MonsterName);
-			AliveMonsters.Remove(j,1);
-		}
-		else
-			toLog("Tick->DeadMonsters cleanup = bad condition");
-		DeadMonsters.Remove(i,1);
-	}*/
-}
-//--------------------------------------------------------------------------------------------------
-/*function MCMonsterInfo GetAliveMonsterInfo(Actor A, optional Actor B)
-{
-	local int i,n;
-	local Controller C;
-	local KFMonster	 M;
-
-	C = Controller(A);
-	if (C==none)
-		C = Controller(B);
-	M = KFMonster(A);
-	if (M==none)
-		M = KFMonster(B);
-
-	if (C!=none || M!=none)
-	{
-		n = AliveMonsters.Length;
-		for(i=0; i<n; i++)
-			if ( (M !=none && AliveMonsters[i].Mon == M)
-				|| (C != none && AliveMonsters[i].Controller == C) )
-				return AliveMonsters[i].MonType;
-	}
-	toLog("GetAliveMonsterInfo->Failed");
-	return none;
-}*/
-//--------------------------------------------------------------------------------------------------
-// Используется в ReduceDamage для сопоставления Монстра к его MonsterInfo (нужны коэффициенты)
-/*function int GetAliveMonsterIndex(Actor A, optional Actor B, optional Name MName)
-{
-	local int i,n;
-	local Controller C;
-	local KFMonster	 M;
-
-	C = Controller(A);
-	if (C==none)
-		C = Controller(B);
-	M = KFMonster(A);
-	if (M==none)
-		M = KFMonster(B);
-
-	if (C!=none || M!=none || Len(MName)>0 )
-	{
-		n = AliveMonsters.Length;
-		for(i=0; i<n; i++)
-		{
-			if ( (M !=none && AliveMonsters[i].Mon == M)
-				||(C != none && AliveMonsters[i].Controller == C) )
-				return i;
-			if( MName == AliveMonsters[i].MName )
-			{
-				toLog("GetAliveMonsterIndex->Found by MName <------");
-				return i;
-			}
-		}
-	}
-	toLog("GetAliveMonsterIndex->Failed");
-	return -1;
-}*/
-//--------------------------------------------------------------------------------------------------
-function ToLog(string Mess, optional Object Sender)
+function toLog(string Mess, optional Object Sender)
 {
 	if ( Sender == none )
 		Sender = Self;
@@ -1315,8 +1230,14 @@ function ToLog(string Mess, optional Object Sender)
 		Log(string(Sender.Name)$"->"$Mess);
 }
 //--------------------------------------------------------------------------------------------------
+
+
+
+
+//--------------------------------------------------------------------------------------------------
 // Функции, скопированные чисто для дебага и логов, удалить в финальной версии
 //--------------------------------------------------------------------------------------------------
+
 
 // Force slomo for a longer period of time when the boss dies
 function DoBossDeath()

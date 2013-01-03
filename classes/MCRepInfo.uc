@@ -1,6 +1,7 @@
 Class MCRepInfo extends LinkedReplicationInfo;
 
 var MonsterConfig SandboxController; // чтобы из ClientKilledMonster иметь доступ к Monsters[i].MonsterName
+var name NameConversionHack;
 
 var float	WaveScore; // очки за текущую волну (используетс€ при начислении денег)
 var float	GameScore; // очки за всю игру
@@ -11,26 +12,29 @@ var int		HealedStat;
 
 replication
 {
+	reliable if(bNetInitial && ROLE == Role_Authority)
+		SandboxController;
 	reliable if(ROLE == Role_Authority)
-		WaveScore, GameScore, ClientKilledMonster, SandboxController;
+		WaveScore, GameScore, ClientKilledMonster;
 }
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
-simulated function ClientKilledMonster( string MName, optional PlayerReplicationInfo KillerPRI )
+simulated function ClientKilledMonster( string MonsterInfoStr, optional PlayerReplicationInfo KillerPRI )
 {
 	local int i;
-	local MCMonsterInfo	MInfo;
-
-	//SandboxController.LM("ClientKilledMonster"@MName);
-	
-	for (i=0; i<SandboxController.Monsters.Length; i++)
-		if (SandboxController.Monsters[i].MonsterName ~= MName)
+	for (i=SandboxController.Monsters.Length-1; i>=0; --i)
+		if (string(SandboxController.Monsters[i].Name) ~= MonsterInfoStr)
 		{
-			MInfo = SandboxController.Monsters[i];
-			break;
+			Level.GetLocalPlayerController().ReceiveLocalizedMessage(Class'MCKillsMessage ',,KillerPRI,,SandboxController.Monsters[i]);
+			return;
 		}
-	// TODO for standart monsters there is no MonsterInfo, so no messages
-	Level.GetLocalPlayerController().ReceiveLocalizedMessage(Class'MCKillsMessage ',,KillerPRI,,MInfo.MNameObj);
+
+	// ERROR condition
+	if (SandboxController==none)
+		log("Error: MCRepInfo->ClientKilledMonster() SandboxController==none");
+	SandboxController.LM("Error: MCRepInfo->ClientKilledMonster() Failed to found"@MonsterInfoStr);
+	for (i=SandboxController.Monsters.Length-1; i>=0; --i)
+		SandboxController.LM(string(SandboxController.Monsters[i].Name));
 }
 //--------------------------------------------------------------------------------------------------
 function PostBeginPlay()
@@ -38,6 +42,8 @@ function PostBeginPlay()
 	local PlayerController PC;
 	local PlayerReplicationInfo PRI;
 	local LinkedReplicationInfo L;
+	local bool lDebug;
+	lDebug=true;
 	
 	// определ€ем хоз€ина
 	PC = PlayerController(Owner);
@@ -45,35 +51,43 @@ function PostBeginPlay()
 		PRI = PC.PlayerReplicationInfo;
 	if (PC==none || PRI==none)
 	{
-		log("MonsterConfig Error: MCRepInfo failed at PostBeginPlay()");
+		warn("MonsterConfig Error: MCRepInfo failed at PostBeginPlay()");
 		return;
 	}
 	
-	// подгружаем себ€ к хоз€ину
-	// thanks to Flame
+	// подгружаем себ€ к хоз€ину thanks to Flame
 	if (PRI.CustomReplicationInfo == none)
+	{
 		PRI.CustomReplicationInfo = self;
+		if (lDebug) log("MCRepInfo loaded for"@PRI.PlayerName);
+	}
 	else
 	{
 		for( L=PRI.CustomReplicationInfo; L!=none; L=L.NextReplicationInfo )
 		{
-			if (L.Class==self.Class)
+			if (L.Class==default.Class)
 			{
-				warn("MCCustomRepInfo already loaded for"@PRI.PlayerName);
+				warn("MCRepInfo already loaded for"@PRI.PlayerName);
 				return;
 			}
 		}
-			
+
 		for( L=PRI.CustomReplicationInfo; L!=none; L=L.NextReplicationInfo )
 		{
 			if( L.NextReplicationInfo==none )
 			{
 				L.NextReplicationInfo = self; // Add to the end of the chain.
-				log("MCRepInfo loaded for"@PRI.PlayerName);
+				if (lDebug) log("MCRepInfo loaded for"@PRI.PlayerName);
 				return;
 			}
 		}
 	}
+}
+//--------------------------------------------------------------------------------------------------
+simulated function name StringToName(string str)
+{
+  SetPropertyText("NameConversionHack", str);
+  return NameConversionHack;
 }
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
