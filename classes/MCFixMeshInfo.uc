@@ -7,7 +7,7 @@ var const string delim;
 var class<KFMonster>	MClass;
 var Mesh				Mesh;
 var array<Material>		Skins;
-
+//--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 simulated function GetI(out string s, out int I)
 {
@@ -63,8 +63,7 @@ simulated function UnSerialize(string S)
 	for (i=0;i<n;i++)
 	{
 		MaterialClass	= class<Material>(DynamicLoadObject(Get(S), class'Class'));
-		Skins[i]= Material(DynamicLoadObject(Get(S), MaterialClass));
-
+		Skins[i]		= Material(DynamicLoadObject(Get(S), MaterialClass));
 		// Marco said that we can use only this. And it works, but.... dunno why, 
 		// I want to specify the class of Material.
 		//Skins[i] = Material(DynamicLoadObject(t2, class'Material'));		

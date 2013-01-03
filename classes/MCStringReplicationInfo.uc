@@ -2,7 +2,7 @@ class MCStringReplicationInfo extends ReplicationInfo;
 
 const MaxSize = 255;
 
-var String Str;
+var string Str;
 var MCStringReplicationInfo Next;
 var int length;
 var int revision;
@@ -17,7 +17,7 @@ replication
 	reliable if ( /*bNetDirty && */Role == ROLE_Authority )
 		Str, Next, length, revision,
 		OwnerPC, bMenuStr;
-	
+
 	reliable if ( Role != ROLE_Authority )	
 		SetStringClient;
 }

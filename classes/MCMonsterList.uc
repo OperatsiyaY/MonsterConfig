@@ -1,16 +1,17 @@
+/*
+ * Класс обеспечивает функционирование и репликацию на клиенты связного списка Монстр-МонстрИнфоName
+ */
 class MCMonsterList	extends ReplicationInfo;
 
 var MCMonsterList Prev,Next;
 var MonsterConfig SandboxController;
 
 var KFMonster	Monster;
-var Controller	Controller;
-var String		MonsterInfoName; // репликация name не работает как надо. на клиенте все реплицированные Name == "TexEnvMap"
+var Controller	Controller;		 // на клиенте контроллеры не спавнятся, поэтому используем Monster
+var string		MonsterInfoName; // репликация name не работает как надо. на клиенте все реплицированные Name == "TexEnvMap"
+
 var bool		bDeleted, bDeletedClient;
 var byte		revision, revisionClient;
-
-var byte		listRevision, listRevisionClient;
-var Name clearName;
 
 replication
 {
@@ -20,9 +21,6 @@ replication
 		bDeleted;
 	reliable if (bDeleted==false && ROLE == ROLE_Authority)
 		Monster, MonsterInfoName, revision;
-		/*Next, revision, listRevision;*/
-		/*Controller,*/
-		/*Prev,*/
 }
 //--------------------------------------------------------------------------------------------------
 function PostBeginPlay()
@@ -35,10 +33,10 @@ simulated function PostNetReceive()
 {
 	if (bDeleted && bDeletedClient!=bDeleted)
 	{
-		Controller = none;
-		Monster = none;
-		MonsterInfoName = "";
-		bDeletedClient = bDeleted;
+		Controller		= none;
+		Monster			= none;
+		MonsterInfoName	= "";
+		bDeletedClient	= bDeleted;
 	}
 	else if (!bDeleted && revision!=revisionClient && Monster!=none && Len(MonsterInfoName)>0)
 	{
@@ -87,7 +85,6 @@ function Add(Controller C, string MIName)
 		}
 		Next.Add(C, MIName);
 	}
-	listRevision++;
 }
 //--------------------------------------------------------------------------------------------------
 function Del(Controller C)
@@ -100,7 +97,7 @@ function Del(Controller C)
 	{
 		// удаляем
 		Controller = none;
-		MonsterInfoName = "";//clearName;
+		MonsterInfoName = "";
 		revision++;
 		revisionClient = revision;
 		bDeleted=true;
@@ -133,8 +130,8 @@ function Clear()
 {
 	bDeleted = true;
 	Controller = none;
-	MonsterInfoName = "";//clearName;
-	if (Next != none /*&& !Next.bDeleted*/)
+	MonsterInfoName = "";
+	if (Next != none)
 		Next.Clear();
 }
 //--------------------------------------------------------------------------------------------------
@@ -160,13 +157,13 @@ function function MCMonsterList GetFirstDeleted()
 		return none;
 }
 //--------------------------------------------------------------------------------------------------
-simulated function MCMonsterList GetNext()
+/*simulated function MCMonsterList GetNext()
 {
 	if (Next==none || Next.bDeleted)
 		return none;
 	else
 		return Next;
-}
+}*/
 //--------------------------------------------------------------------------------------------------
 simulated function MCMonsterList Find(Controller C)
 {
@@ -187,7 +184,7 @@ simulated function toLog(string M)
 defaultproperties
 {
 	bDeleted=true
-	
+
 	bNetNotify=true
 	RemoteROLE=ROLE_SimulatedProxy
 	bAlwaysRelevant=true

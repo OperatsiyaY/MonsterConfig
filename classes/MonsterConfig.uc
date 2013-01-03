@@ -1,12 +1,10 @@
 /*
- * 1. Так как нужно при спавне монстров заменять их параметры, а спавнятся монстры в ZombieVolume,
- * то его нужно заменить на наш. В CheckReplacement ловятся все ZombieVolume, и если они не являются
- * нашими MCZombieVolume,то поднимается флаг bReplaceZombieVolumes. В Tick этот флаг ловится и
- * вызывается функция ReplaceZombieVolumes, которая заменяет все ZombieVolume в
- * KFGameType.ZedSpawnList на наши MCZombieVolume
- *
+ * TODO:
+ * 1. Сделать GUI
+ * 2. Тестить
+ *  
  */
-
+//--------------------------------------------------------------------------------------------------
 class MonsterConfig extends Mutator
 	dependson(MCSquadInfo)
 	dependson(MCMonsterList)
@@ -25,14 +23,15 @@ var config float	MonstersMaxAtOnceMod,MonstersTotalMod;
 var config float	MonsterBodyHPMod,MonsterHeadHPMod,MonsterSpeedMod,MonsterDamageMod;
 var config float	HealedToScoreCoeff;
 var config int		BroadcastKillmessagesMass, BroadcastKillmessagesHealth;
+var config float	StandartGameDifficulty;
 
 // общие
-var MCGameType		GT;
-var FileLog			MCLog; // отдельный лог
+var MCGameType					GT;
+var FileLog						MCLog; // отдельный лог
 var config class<KFGameType>	GameTypeClass; // позволить юзерам наследовать уже свой GameType, наследованынй от нашего
 
-// замена ZombieVolume на на MCZombieVolume
-var array<ZombieVolume> PendingZombieVolumes; // Массив ZombieVolumes, будут заменены в след.тике на наши
+// замена ZombieVolume на наши MCZombieVolume
+var array<ZombieVolume>			PendingZombieVolumes; // будут заменены в след.тике
 
 // массивы настроек
 var array<MCMonsterInfo>		Monsters;
@@ -51,34 +50,24 @@ var config array<FixMeshStruct>	FixMeshInfoConfig;
 var array<MCFixMeshInfo>		FixMeshInfo;
 var MCStringReplicationInfo		RDataFixMeshInfo;
 var MCFixMeshInfo				tFixMeshInfo;
+var array<KFMonster>			PendingMonsters; // через этот массив ищем и добавляем не своих монстров
+var bool						bFixChars;
 
-// репликация на клиенты
+// репликация значений на клиенты
 var const string				rDataDelim;
 var MCStringReplicationInfo		RDataMonsters;
 var MCStringReplicationInfo		RDataMapInfo;
-
-var array<KFMonster>			PendingMonsters; // через этот массив ищем и добавляем не своих монстров
-//var array<Controller>			PendingMonsters;
-var bool						bFixChars;
-var MCMonsterList				AliveMonsters;
-struct CacheStruct
-{
-	var KFMonster	Mon;
-	var Controller	Controller;
-	var string		MonsterInfoName;
-	var int			revision, revisionClient;
-};
-var array<CacheStruct> AliveMonstersCache;
+var MCMonsterList				AliveMonsters; // массив сопоставления "Монстр - string(MonsterInfoName)"
 
 // для системы наград от Тело
 var config bool					bWaveFundSystem; // указывает какая система фонда будет использоваться
 var MCPerkStats					PerkStats;
 var array<PlayerController>		PendingPlayers; // игроки, которым присвоить MCRepInfo
 
-// в профайлере обнаружилось, что GetNumPlayers довольно тяжелая функция, вызывается часто,
-// поэтому кэшируем значение и обновляем его реже.
-var int NumPlayers;
-var float NumPlayersRecalcTime;
+// В профайлере обнаружилось, что GetNumPlayers довольно тяжелая функция
+// поэтому кэшируем значение и обновляем его реже. NumPlayers так же реплицируется на клиенты
+var int		NumPlayers;
+var float	NumPlayersRecalcTime;
 
 replication
 {
@@ -118,31 +107,6 @@ function PostBeginPlay()
 	MakeRData();
 
 	AliveMonsters = spawn(class'MCMonsterList', self);
-
-	/* KFGameType->InitGame:
-	 * Установка KFGameType.MaxPlayers
-	 * Установка KFLRules.WaveSpawnPeriod который используется в CalcNextSquadSpawnTime()
-	 * или переписать его полностью, чтобы использовал наш DelayBetweenSquads из WaveInfo
-	 *
-	 * KFGameType.DoWaveEnd
-	 * Дает вознаграждение выжившим
-	 * Устанавливает отчет до следующей волны WaveCountDown = Max(TimeBetweenWaves,1);  <--- переписать
-	 * Увеличивает номер волны
-	 * Меняет выбранный перк
-	 * Респавнит мертвых
-	 * Зачисляет стату
-	 * Респавнит двери
-	 *
-	 * KFGameType.InitMapWaveCfg
-	 * Выключает ZombieVolume, исходя из ZombieVolume.DisabledWaveNums
-	 *
-	 * KFGameType.StartWaveBoss
-	 * Устанавливает NextSpawnSquad.Length = 1
-	 * Устанавливает NextSpawnSquad[0] - босса
-	 * KFGameReplicationInfo(Level.Game.GameReplicationInfo).MaxMonsters = 1;
-	 * TotalMaxMonsters = 1;
-	 * bWaveBossInProgress = True;
-	 */
 
 	GT.PostInit(Self);
 }
@@ -185,6 +149,7 @@ function MakeRData()
 simulated function InitMonster(KFMonster M, string MIName)
 {
 	local int i, PlayersCount;
+	local ZombieBoss Z;
 	local float TempDamage, F;
 	local MCMonsterInfo MI;
 	local Mesh tMesh;
@@ -238,6 +203,16 @@ simulated function InitMonster(KFMonster M, string MIName)
 	if (MI.HealthMax != -1)
 		F = FMin(MI.HealthMax, F);
 	M.Health = F * (MonsterBodyHPMod * MapInfo.MonsterBodyHPMod);
+	
+	Z = ZombieBoss(M);
+	if (Z!=none)
+	{
+		Z.HealingLevels[0] = Z.Health/1.25; // Around 5600 HP
+		Z.HealingLevels[1] = Z.Health/2.f; // Around 3500 HP
+		Z.HealingLevels[2] = Z.Health/3.2; // Around 2187 HP
+		Z.HealingAmount = Z.Health/4; // 1750 HP
+	}
+
 	M.HealthMax = M.Health;
 
 	if (MI.HeadHealth != -1)
@@ -330,7 +305,8 @@ simulated function InitMonster(KFMonster M, string MIName)
 		}
 }
 //--------------------------------------------------------------------------------------------------
-function ReadConfig() {
+function ReadConfig()
+{
 	local int i,j,n;
 	local array<string> Names;
 	local MCMonsterInfo	tMonsterInfo;
@@ -338,7 +314,7 @@ function ReadConfig() {
 	local MCWaveInfo	tWaveInfo;
 	local MCMapInfo		tMapInfo;
 
-	
+	// чтение FixMeshInfo's
 	for (i=0;i<FixMeshInfoConfig.Length;i++)
 	{
 		FixMeshInfoConfig[i].Mesh = GetDefaultMesh(FixMeshInfoConfig[i].MClass);
@@ -355,18 +331,6 @@ function ReadConfig() {
 			FixMeshInfo[n].Skins[j] = FixMeshInfoConfig[i].Skins[j];
 	}
 
-	/*
-	tSquadInfo = new(None, "test") class'MCSquadInfo';
-	tSquadInfo.Monster.Insert(0,2);
-	tSquadInfo.Monster[0].MonsterName[0]="Clot_125";
-	tSquadInfo.Monster[0].MonsterName[1]="Clot_1000";
-	tSquadInfo.Monster[0].Num = 4;
-	tSquadInfo.Monster[1].MonsterName[0] = "Clot_1000";
-	tSquadInfo.Monster[1].Num = 2;
-	tSquadInfo.SaveConfig();
-	*/
-
-
 	// чтение описаний монстров
 	Names = class'MCMonsterInfo'.static.GetNames();
 	for (i = 0; i < Names.length; i++)
@@ -375,11 +339,6 @@ function ReadConfig() {
 		tMonsterInfo = new(None, Names[i]) class'MCMonsterInfo';
 		if (tMonsterInfo.MonsterClass != none)
 		{
-/* 			// для KillsMessage
-			tMonsterInfo.MNameObj = new(None, string(tMonsterInfo.Name)) class'MCMonsterNameObj';
-			tMonsterInfo.MNameObj.MonsterName  = tMonsterInfo.MonsterName;
-			tMonsterInfo.MNameObj.MonsterClass = tMonsterInfo.MonsterClass;
- */
 			// если трипы удалили Mesh в очередной раз
 			if (tMonsterInfo.MonsterClass.default.Mesh==none && tMonsterInfo.Mesh.Length==0)
 				tMonsterInfo.Mesh[0] = GetDefaultMesh(tMonsterInfo.MonsterClass);
@@ -636,7 +595,7 @@ function MCMonsterInfo GetMonster(string MonsterName)
 //--------------------------------------------------------------------------------------------------
 function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
 {
-	// Спавним MCRepInfo наш Linked ReplicationInfo с доп.статистикой
+	// Спавним MCRepInfo наш Linked ReplicationInfo с доп.статистикой и своим KillsMessage
 	if (PlayerController(Other)!=none)
 	{
 		PendingPlayers[PendingPlayers.Length] = PlayerController(Other);
@@ -656,15 +615,6 @@ function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
 
 	return true;
 }
-//--------------------------------------------------------------------------------------------------
-/*simulated function PostNetReceive()
-{
-	if (AliveMonsters.listRevisionClient != AliveMonsters.listRevision)
-	{
-		AliveMonsters.listRevisionClient = AliveMonsters.listRevision;
-		SetTimer(0.1, false);  // InitAliveMonsters();
-	}
-}*/
 //--------------------------------------------------------------------------------------------------
 // разворачиваем на клиенте реплицированную строку MapInfo
 simulated function ExtractMapInfo(string input)
@@ -697,12 +647,6 @@ simulated function ExtractMonsters(string input)
 				bFound=true;
 				Monsters[j].Unserialize(MInfoStr);
 				LM("Client got MonsterInfo for"@S@string(Monsters[j].Name));
-/* 				// для KillMessages
-				if (Monsters[j].MNameObj==none)
-					Monsters[j].MNameObj = new(None, string(Monsters[j].Name)) class'MCMonsterNameObj';
-				Monsters[j].MNameObj.MonsterName  = Monsters[j].MonsterName;
-				Monsters[j].MNameObj.MonsterClass = Monsters[j].MonsterClass; */
-
 				break;
 			}
 		if (bFound==false)
@@ -712,11 +656,6 @@ simulated function ExtractMonsters(string input)
 			Monsters[j] = new(None, S) class'MCMonsterInfo';
 			Monsters[j].Unserialize(MInfoStr);
 			LM("Client got MonsterInfo for"@S@string(Monsters[j].Name));
-/* 			// для KillMessages
-			if (Monsters[j].MNameObj==none)
-				Monsters[j].MNameObj = new(None, string(Monsters[j].Name)) class'MCMonsterNameObj';
-			Monsters[j].MNameObj.MonsterName  = Monsters[j].MonsterName;
-			Monsters[j].MNameObj.MonsterClass = Monsters[j].MonsterClass; */
 		}
 	}
 }
@@ -1324,7 +1263,7 @@ function bool GetHealedStats(PlayerReplicationInfo PRI, out int Ret)
 	for( L=PRI.CustomReplicationInfo; L!=None; L=L.NextReplicationInfo )
 		if( L.IsA('ClientPerkRepLink') )
 		{
-			Ret = int(L.GetPropertyText("RWeldingPointsStat"));
+			Ret = int(L.GetPropertyText("RDamageHealed")); // RWeldingPointsStat
 			Log("GetHealedStats()->found RDamageHealed for"@PRI.PlayerName@":"@ret);
 			return true;
 		}
@@ -1333,6 +1272,7 @@ function bool GetHealedStats(PlayerReplicationInfo PRI, out int Ret)
 	if (KFSteamStatsAndAchievements(PRI.SteamStatsAndAchievements)!=none)
 	{
 		Ret = KFSteamStatsAndAchievements(PRI.SteamStatsAndAchievements).DamageHealedStat.Value;
+		//Ret = KFSteamStatsAndAchievements(PRI.SteamStatsAndAchievements).WeldingPointsStat.Value;
 		Log("GetHealedStats()->found DamageHealed for"@PRI.PlayerName@":"@ret);
 		return true;
 	}
@@ -1343,7 +1283,7 @@ function bool GetHealedStats(PlayerReplicationInfo PRI, out int Ret)
 		if (L.IsA('ClientPerkRepLink'))
 			if (PlayerController(L.Owner) == PlayerController(PRI.Owner))
 			{
-				Ret = int(L.GetPropertyText("RWeldingPointsStat"));
+				Ret = int(L.GetPropertyText("RDamageHealed"));
 				Log("GetHealedStats()->found RDamageHealed for"@PRI.PlayerName@":"@ret@"With DynamicActors routine");
 				// Marco said DynamicActors is SLOW operation, so add it to LinkedRepInfoList
 				AddCustomReplicationInfo(PRI, L);
@@ -1369,6 +1309,8 @@ defaultproperties
 	RemoteRole=ROLE_SimulatedProxy
 	//bNetNotify=true
 
+	StandartGameDifficulty = 4.0 // Hard
+	
 	FakedPlayersNum = 0
 	MonstersTotalMod = 1.00
 	MonstersMaxAtOnceMod = 1.00

@@ -18,9 +18,7 @@ var config float			MonstersTotalCoeff;
 var config float			MonstersMaxAtOnceCoeff;
 var config bool				bUseZombieVolumeWaveDisabling;
 var config float			TimeBetweenWaves;
-
 var config float			MonsterBodyHPMod,MonsterHeadHPMod,MonsterSpeedMod,MonsterDamageMod;
-
 var config PerPlayerMapInfo	PerPlayer;
 //--------------------------------------------------------------------------------------------------
 simulated function GetI(out string s, out int I)

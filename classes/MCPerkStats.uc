@@ -9,13 +9,12 @@ struct PerkStatStruct
 {
 	var int					PerkIndex;
 	var class<KFVeterancyTypes> Perk;
-	var float				Score;// считать среднее Score за волну для перка
-	var int					Num;
+	var float				Score;	// среднее WaveScore за волну для перка
+	var int					Num;	// число значений для вычисления среднего
 };
-
 var config array<PerkStatStruct>	PerkStats;
 
-// work
+// рабочие переменные
 var int	MidScore;
 //--------------------------------------------------------------------------------------------------
 function AddPerkScore(class<KFVeterancyTypes> Perk, int Score)

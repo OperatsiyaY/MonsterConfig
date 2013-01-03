@@ -3,8 +3,8 @@ class MCMonsterInfo extends Object
 	PerObjectConfig
 	config(MonsterConfig);
 	
-var const string ConfigFile;
-var int revision;
+var const string	ConfigFile;
+var int				revision;
 
 // сколько хп добавлять к мобу за каждого игрока
 struct PerPlayerSettings
