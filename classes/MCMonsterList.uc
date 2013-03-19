@@ -13,6 +13,8 @@ var string		MonsterInfoName; // репликация name не работает как надо. на клиенте
 var bool		bDeleted, bDeletedClient;
 var byte		revision, revisionClient;
 
+var bool		bDebug;
+
 replication
 {
 	reliable if (bNetInitial && ROLE == ROLE_Authority)
@@ -45,26 +47,24 @@ simulated function PostNetReceive()
 	}
 }
 //--------------------------------------------------------------------------------------------------
-function int CountAll()
+function Print()
 {
-	if (Next==none)
-		return 1;
-	else return 1+Next.CountAll();
-}
-//--------------------------------------------------------------------------------------------------
-function int Count()
-{
-	local int n;
-	if (!bDeleted)
-		n = 1;
-
-	if (Next!=none)
-		n += Next.Count();
-	return n;
+	local MCMonsterList MList;
+	local int i;
+	for (MList=self; MList!=none; MList=MList.Next)
+	{
+		log("MList["$i++$"] Controller:"$string(MList.Controller)@"Monster:"$string(MList.Monster)@"MonsterInfo:"$MList.MonsterInfoName);
+	}
+	log("--------------");
 }
 //--------------------------------------------------------------------------------------------------
 function Add(Controller C, string MIName)
 {
+	if (bDebug && Prev==none)
+	{
+		log("pre add Controller:"$string(C)@"MonsterInfoName:"$MIName);
+		Print();
+	}
 	if (Controller == C || bDeleted)
 	{
 		Controller	= C;
@@ -76,7 +76,7 @@ function Add(Controller C, string MIName)
 		SandboxController.InitMonster(Monster, MonsterInfoName);
 		NetUpdateTime = Level.TimeSeconds-1.f;
 	}
-	else
+	else	
 	{
 		if (Next==none)
 		{
@@ -85,54 +85,100 @@ function Add(Controller C, string MIName)
 		}
 		Next.Add(C, MIName);
 	}
+
+	// если монстр исчез без нашего оповещения (Controller==none), удаляем запись
+	if (Prev!=none && !bDeleted && Controller==none)
+	{
+		DelSelf();
+	}
+	
+	if (bDebug && Prev==none)
+	{
+		log("post add Controller:"$string(C)@"MonsterInfoName:"$MIName);
+		Print();
+	}
+}
+//--------------------------------------------------------------------------------------------------
+function DelSelf()
+{
+	local MCMonsterList MList;
+	// удаляем
+	Controller = none;
+	Monster = none;
+	MonsterInfoName = "";
+	revision++;
+	revisionClient = revision;
+	bDeleted=true;
+	//NetUpdateTime = Level.TimeSeconds-1.f;
+
+	// перемещаем в конец
+	if (Prev!=none)
+	{
+		MList = GetLast();
+		if ( MList != self ) // если я не последний
+		{
+			// выдергиваем себя из списка
+			Prev.Next = Next;
+			Next.Prev = Prev;
+			
+			// ставим себя после последнего найденного элемента
+			Next = none;
+			Prev = MList;
+			
+			MList.Next = self;
+		}
+	}
 }
 //--------------------------------------------------------------------------------------------------
 function Del(Controller C)
 {
+	//local MCMonsterList CacheNext;
 	local MCMonsterList MList;
-	local MCMonsterList CacheNext;
+	
+	if (bDebug && Prev==none)
+	{
+		log("pre del Controller:"$string(C));
+		Print();
+	}
 
+	for (MList=self; MList!=none; MList=MList.Next)
+	{
+		if (MList.Controller==none)
+		{
+			MList.DelSelf();
+			continue;
+		}
+		if (MList.Controller == C)
+		{
+			MList.DelSelf();
+			break;
+		}
+	}
+/*	
 	CacheNext = Next;
 	if( C!=none && Controller==C )
-	{
-		// удаляем
-		Controller = none;
-		MonsterInfoName = "";
-		revision++;
-		revisionClient = revision;
-		bDeleted=true;
-		//NetUpdateTime = Level.TimeSeconds-1.f;
-		
-		// перемещаем в конец
-		if (Prev!=none)
-		{
-			MList = GetLast();
-			if ( MList != self ) // если последний, или и так попорядку всё, тоже
-			{
-				// выдергиваем себя из списка
-				Prev.Next = Next;
-				Next.Prev = Prev;
-				
-				// ставим себя после последнего найденного элемента
-				Next = none;
-				Prev = MList;
-				
-				MList.Next = self;
-			}
-		}
+		DelSelf();
 
-	}
 	else if (CacheNext!=none && !CacheNext.bDeleted)  // else возможно убрать, чтобы числил весь лист от C
 		CacheNext.Del(C);
+*/	
+	if (bDebug && Prev==none)
+	{
+		log("post del Controller:"$string(C));
+		Print();
+	}
 }
 //--------------------------------------------------------------------------------------------------
 function Clear()
 {
-	bDeleted = true;
-	Controller = none;
-	MonsterInfoName = "";
-	if (Next != none)
-		Next.Clear();
+	local MCMonsterList MList;
+	for (MList=self; MList!=none; MList=MList.Next)
+	{
+		MList.bDeleted = true;
+		MList.Controller = none;
+		MList.Monster = none;
+		MList.MonsterInfoName = "";
+	}
 }
 //--------------------------------------------------------------------------------------------------
 function MCMonsterList GetLast()
@@ -157,14 +203,6 @@ function function MCMonsterList GetFirstDeleted()
 		return none;
 }
 //--------------------------------------------------------------------------------------------------
-/*simulated function MCMonsterList GetNext()
-{
-	if (Next==none || Next.bDeleted)
-		return none;
-	else
-		return Next;
-}*/
-//--------------------------------------------------------------------------------------------------
 simulated function MCMonsterList Find(Controller C)
 {
 	if( C!=none && Controller==C )
@@ -180,10 +218,37 @@ simulated function toLog(string M)
 	log("MCMonsterList->"$M);
 }
 //--------------------------------------------------------------------------------------------------
+/*simulated function MCMonsterList GetNext()
+{
+	if (Next==none || Next.bDeleted)
+		return none;
+	else
+		return Next;
+}
+//--------------------------------------------------------------------------------------------------
+function int CountAll()
+{
+	if (Next==none)
+		return 1;
+	else return 1+Next.CountAll();
+}
+//--------------------------------------------------------------------------------------------------
+function int Count()
+{
+	local int n;
+	if (!bDeleted)
+		n = 1;
+
+	if (Next!=none)
+		n += Next.Count();
+	return n;
+}*/
+//--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 defaultproperties
 {
 	bDeleted=true
+	bDebug=false
 
 	bNetNotify=true
 	RemoteROLE=ROLE_SimulatedProxy

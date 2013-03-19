@@ -13,6 +13,7 @@ var bool					bReady; // флаг выставляется в PostInit(),
 									// который вызывается SandboxController.PostBeginPlay()
 									
 var bool					bBossView;
+var float					BossViewBackTime;
 
 var MonsterConfig			SandboxController;
 var MCWaveInfo				CurWaveInfo; // инфо о текущей волне
@@ -60,6 +61,7 @@ function AddSpecialSquad();
 //--------------------------------------------------------------------------------------------------
 event InitGame( string Options, out string Error )
 {
+
 //	local int i,j;
 	local KFLevelRules KFLRit;
 	local ShopVolume SH;
@@ -77,6 +79,7 @@ event InitGame( string Options, out string Error )
 			KFLRules = KFLRit;
 		else Warn("MULTIPLE KFLEVELRULES FOUND!!!!!");
 	}
+
 	foreach AllActors(class'ShopVolume',SH)
 		ShopList[ShopList.Length] = SH;
 	foreach AllActors(class'ZombieVolume',ZZ)
@@ -101,7 +104,7 @@ event InitGame( string Options, out string Error )
 function PostInit(MonsterConfig Sender)
 {
 	SandboxController = Sender;
-	GameDifficulty = SandboxController.StandartGameDifficulty; // для стандартных мобов типо сталкеров на карте
+	GameDifficulty = SandboxController.GameInfo.GameDifficulty; // для стандартных мобов типо сталкеров на карте
 	
 	FinalWave = SandboxController.Waves.Length - 1;
 	toLog("PostInit->FinalWave:"@FinalWave);
@@ -128,13 +131,7 @@ function SetupWave()
 	MCSetupWave();
 }
 //--------------------------------------------------------------------------------------------------
-// Определяем номер волны относительно других
-function int GetWaveNum(MCWaveInfo Wave)
-{
-	return SandboxController.GetWaveNum(Wave);
-}
-//--------------------------------------------------------------------------------------------------
-function MCSetupWave()
+function MCSetupWave(optional bool bReinit)
 {
 	local int PlayersCount;
 	local MCWaveInfo tWaveInfo;
@@ -143,10 +140,12 @@ function MCSetupWave()
 	// TODO
 	// определять свой диффикалти, для таблицы (можно кустом в тру выставить при инит)
 	// если сквад заспавнился не полностью, некст спавн тайм обнулять и обновлять только после полногоспавна
-	CurWaveInfo = SandboxController.GetNextWaveInfo(CurWaveInfo);
-	toLog("MCSetupWave->CurWaveInfo:"@string(CurWaveInfo.Name));
-
-	WaveNum = GetWaveNum(CurWaveInfo) - 1;
+	if (!bReinit)
+	{
+		CurWaveInfo = SandboxController.GetNextWaveInfo(CurWaveInfo);
+		toLog("MCSetupWave->CurWaveInfo:"@string(CurWaveInfo.Name));
+	}
+	WaveNum = SandboxController.GetWaveNum(CurWaveInfo) - 1;
 	InvasionGameReplicationInfo(GameReplicationInfo).WaveNumber = WaveNum;
 
 	FinalWave = SandboxController.Waves.Length - 1;
@@ -163,15 +162,17 @@ function MCSetupWave()
 		TimeBetweenWaves *= tWaveInfo.TimeBetweenThisWaveCoeff;
 	TimeBetweenWaves = Max(TimeBetweenWaves,1);
 
-	// количество монстров за волну
-	TotalMaxMonsters	= SandboxController.MonstersTotalMod * SandboxController.MapInfo.MonstersTotalCoeff
-						* ( CurWaveInfo.MonstersTotal + CurWaveInfo.PerPlayer.MonstersTotal * (PlayersCount - 1) );
-	toLog("MCSetupWave->TotalMaxMonsters:"@TotalMaxMonsters);
-
+	if (!bReinit)
+	{
+		// количество монстров за волну
+		TotalMaxMonsters	= SandboxController.GameInfo.MonstersTotalMod * SandboxController.MapInfo.MonstersTotalCoeff
+							* ( CurWaveInfo.MonstersTotal + CurWaveInfo.PerPlayerMonstersTotal * (PlayersCount - 1) );
+		toLog("MCSetupWave->TotalMaxMonsters:"@TotalMaxMonsters);
+	}
 
 	// Мобы, одновременно находящиеся на карте
-	MaxMonsters	= SandboxController.MonstersMaxAtOnceMod * SandboxController.MapInfo.MonstersMaxAtOnceCoeff
-				* ( CurWaveInfo.MonstersMaxAtOnce + CurWaveInfo.PerPlayer.MonstersMaxAtOnce * (PlayersCount - 1) );
+	MaxMonsters	= SandboxController.GameInfo.MonstersMaxAtOnceMod * SandboxController.MapInfo.MonstersMaxAtOnceCoeff
+				* ( CurWaveInfo.MonstersMaxAtOnce + CurWaveInfo.PerPlayerMonstersMaxAtOnce * (PlayersCount - 1) );
 	toLog("MCSetupWave->MaxMonsters:"@MaxMonsters);
 
 	KFGameReplicationInfo(Level.Game.GameReplicationInfo).MaxMonsters = TotalMaxMonsters;
@@ -293,7 +294,7 @@ function bool MCAddSquad(optional bool bBoss, optional bool bBossHelpSquad)
 		TempTotalMaxMonsters,	// out TotalMaxMonsters
 		ZombiesAtOnceLeft,	// int MaxMonstersAtOnceLeft
 		TotalZombiesValue,	// out int TotalZombiesValue
-		false) )			// bTryAllSpawns - если false, делает только 3 попытки спавна,
+		true) )			// bTryAllSpawns - если false, делает только 3 попытки спавна,
 							// если true - пытается заспавнить во всех SpawnPoints волума
 							// TODO - ставить тут true?
 	{
@@ -520,7 +521,8 @@ function bool AddBoss()
 //--------------------------------------------------------------------------------------------------
 function AddBossBuddySquad()
 {
-	MCAddSquad(false, true); //bBoss==false, bBossHelpSquad==true;
+	if (bWaveBossInProgress) // вызываем подмогу, только если финальная волна
+		MCAddSquad(false, true); //bBoss==false, bBossHelpSquad==true;
 	return;
 /*	Оригинальный код TWI
 	local int numspawned;
@@ -635,8 +637,11 @@ function DoBossDeath()
     CurrentZEDTimeDuration = ZEDTimeDuration*2;
     SetGameSpeed(ZedTimeSlomoScale);
 
-	// выключаем монстров, только если действительно все убиты
-	if (TotalMaxMonsters<=0 && NumMonsters <= 0)
+	bBossView=true;
+	BossViewBackTime = Level.Timeseconds + ZEDTimeDuration*1.1;
+	
+	// выключаем монстров, только если действительно все убиты и это последняя волна
+	if (TotalMaxMonsters<=0 && NumMonsters <= 0 && bWaveBossInProgress)
 	{
 		num = NumMonsters;
 
@@ -754,7 +759,7 @@ function ScoreKill(Controller Killer, Controller Other)
 	if (Killer.PlayerReplicationInfo !=none)
 	{
 		Killer.PlayerReplicationInfo.Kills++;
-		if (SandboxController.bWaveFundSystem==false)
+		if (SandboxController.GameInfo.bWaveFundSystem==false)
 		{	
 			//GetAliveMonsterInfo(Other, Other.Pawn);
 			tMonsterInfo = SandboxController.GetMonInfo(Other);
@@ -772,9 +777,12 @@ function ScoreKill(Controller Killer, Controller Other)
 			else
 				KillScore = tMonsterInfo.RewardScore;
 
-			if( tMonsterInfo!=none
-				&& tMonsterInfo.RewardScoreCoeff != tMonsterInfo.default.RewardScoreCoeff )
+			// множитель денег за конкретного моба
+			if( tMonsterInfo!=none && tMonsterInfo.RewardScoreCoeff != 1.f )
 				KillScore *= tMonsterInfo.RewardScoreCoeff;
+			
+			// общеигровой множитель на деньги
+			KillScore *= SandboxController.GameInfo.MoneyMod;
 
 			KillScore = Max(1,int(KillScore));
 			Killer.PlayerReplicationInfo.Team.Score += KillScore;
@@ -809,37 +817,38 @@ function bool RewardWithFundSystem()
 	for ( C = Level.ControllerList; C != none; C = C.NextController )
 	{
 		PRI = C.PlayerReplicationInfo;
-		if ( PRI != none )
+		if ( PRI == none ) continue;
+		RInfo = SandboxController.GetMCRepInfo(PRI);
+		if ( RInfo == none ) continue;
+			
+		// HealedStat - общая стата из перков сколько игкрок вылечил всего
+		SandboxController.GetHealedStats(PRI, HealedStat); // берем из перков
+		if( C.Pawn != none
+			&& PRI.bOutOfLives==false ) // остался жив
 		{
-			RInfo = SandboxController.GetMCRepInfo(PRI);
-			// HealedStat - общая стата из перков сколько игкрок вылечил всего
-			SandboxController.GetHealedStats(PRI, HealedStat); // берем из перков
-			if( C.Pawn != none
-				&& PRI.bOutOfLives==false ) // остался жив
+			if (RInfo.HealedStat > 0)
 			{
-				if (RInfo.HealedStat > 0)
-				{
-					// сравниваем с предыдущим значением
-					Healed = HealedStat - RInfo.HealedStat;
-					SandboxController.LM(PRI.PlayerName@"Healed"@Healed);
-					F = float(Healed) * SandboxController.HealedToScoreCoeff;
-					// добавили в общие очки игрока
-					RInfo.WaveScore += F;
-				}
-				RInfo.HealedStat = HealedStat;
-
-				RInfo.GameScore += F; /*RInfo.WaveScore*/
-
-				// считаем общую стату за волну, чтобы потом правильно распределить
-				WaveScore += RInfo.WaveScore;
+				// сравниваем с предыдущим значением
+				Healed = HealedStat - RInfo.HealedStat;
+				SandboxController.LM(PRI.PlayerName@"Healed"@Healed);
+				F = float(Healed) * SandboxController.GameInfo.HealedToScoreCoeff;
+				// добавили в общие очки игрока
+				RInfo.WaveScore += F;
 			}
-			// для тех, кто не выжил, просто удаляем прогресс, к сожалению.
-			// фонд за них получат другие
 			RInfo.HealedStat = HealedStat;
+
+			RInfo.GameScore += F; /*RInfo.WaveScore*/
+
+			// считаем общую стату за волну, чтобы потом правильно распределить
+			WaveScore += RInfo.WaveScore;
 		}
+		// для тех, кто не выжил, просто удаляем прогресс, к сожалению.
+		// фонд за них получат другие
+		RInfo.HealedStat = HealedStat;
 	}
 	// определяем фонд
 	Fund = float(CurWaveInfo.PerPlayerFund) * float(Max(1, SandboxController.GetNumPlayers(true)-1));
+	Fund *= SandboxController.GameInfo.MoneyMod;
 	toLog("RewardSurvivingPlayers()->Fund is"@Fund);
 	if (Fund==0)
 		return true;
@@ -847,22 +856,21 @@ function bool RewardWithFundSystem()
 	for ( C = Level.ControllerList; C != none; C = C.NextController )
 	{
 		PRI = C.PlayerReplicationInfo;
-		if( PRI != none )
-			RInfo = SandboxController.GetMCRepInfo(PRI);
-		if (RInfo != none)
+		if( PRI == none ) continue;
+		RInfo = SandboxController.GetMCRepInfo(PRI);
+		if (RInfo == none) continue;
+		
+		if ( C.Pawn != none
+			&& PRI.bOutOfLives == false )
 		{
-			if ( C.Pawn != none
-				&& PRI.bOutOfLives == false )
-			{
 
-				F = SandboxController.PerkStats.GetPerkScoreCoeff(KFPlayerReplicationInfo(PRI).ClientVeteranSkill);
-				F *= Fund * (RInfo.WaveScore / WaveScore);
-				toLog("RewardSurvivingPlayers()->"$PRI.PlayerName@"got"@F);
-				PRI.Score += F;
-				PRI.NetUpdateTime = Level.TimeSeconds - 1;
-				RealFund += F;
-				SandboxController.PerkStats.AddPerkScore(KFPlayerReplicationInfo(PRI).ClientVeteranSkill, int(F));
-			}
+			F = SandboxController.PerkStats.GetPerkScoreCoeff(KFPlayerReplicationInfo(PRI).ClientVeteranSkill);
+			F *= Fund * (RInfo.WaveScore / WaveScore);
+			toLog("RewardSurvivingPlayers()->"$PRI.PlayerName@"got"@F);
+			PRI.Score += F;
+			PRI.NetUpdateTime = Level.TimeSeconds - 1;
+			RealFund += F;
+			SandboxController.PerkStats.AddPerkScore(KFPlayerReplicationInfo(PRI).ClientVeteranSkill, int(F));
 		}
 		RInfo.WaveScore  = 0;
 	}
@@ -876,26 +884,19 @@ function bool RewardSurvivingPlayers()
 	local int moneyPerPlayer,div;
 	local TeamInfo T;
 
-	// если используем систему наград с фондом
-	if (SandboxController.bWaveFundSystem)
+	// если используем систему наград с фондом, выходим и считаем по другому алгоритму
+	if (SandboxController.GameInfo.bWaveFundSystem)
 		return RewardWithFundSystem();
 
 	for ( C = Level.ControllerList; C != none; C = C.NextController )
-	{
 		if ( C.Pawn != none && C.PlayerReplicationInfo != none && C.PlayerReplicationInfo.Team != none )
 		{
 			T = C.PlayerReplicationInfo.Team;
 			div++;
 		}
-	}
-
 	if ( T == none || T.Score <= 0 )
-	{
 		return false;
-	}
-
 	moneyPerPlayer = int(T.Score / float(div));
-
 	for ( C = Level.ControllerList; C != none; C = C.NextController )
 	{
 		if ( C.Pawn != none && C.PlayerReplicationInfo != none && C.PlayerReplicationInfo.Team != none )
@@ -911,9 +912,7 @@ function bool RewardSurvivingPlayers()
 				T.Score-=moneyPerPlayer;
 				div--;
 			}
-
 			C.PlayerReplicationInfo.NetUpdateTime = Level.TimeSeconds - 1;
-
 			if( T.Score <= 0 )
 			{
 				T.Score = 0;
@@ -921,9 +920,7 @@ function bool RewardSurvivingPlayers()
 			}
 		}
 	}
-
 	T.NetUpdateTime = Level.TimeSeconds - 1;
-
 	return true;
 }
 //--------------------------------------------------------------------------------------------------
@@ -933,7 +930,7 @@ state MatchInProgress
 	{
 		super.DoWaveEnd();
 
-		if (SandboxController.bWaveFundSystem)
+		if (SandboxController.GameInfo.bWaveFundSystem)
 			SandboxController.PerkStats.SaveConfig();
 
 		SquadToSpawn.Remove(0,SquadToSpawn.Length);
@@ -948,22 +945,46 @@ state MatchInProgress
 	function float CalcNextSquadSpawnTime()
 	{
 		local float NextSpawnTime;
-		local float SineMod, F, F2, F3;
+		local float SineMod, F, F2;
+		local int i,n;
+		local MCMapInfo Map;
+		local MCWaveInfo Wave;
 		local bool lDebug;
 		lDebug = false;
 
+		n = SandboxController.GetNumPlayers(true) - 1;
 		SineMod = 1.0 - Abs(sin(WaveTimeElapsed * SineWaveFreq));
-
 		//NextSpawnTime = KFLRules.WaveSpawnPeriod;
-		F = CurWaveInfo.DelayBetweenSquads;
-		F *= SandboxController.MapInfo.DelayBetweenSquadsCoeff;
+		
+		F = 1.0;
+		Wave = CurWaveInfo;
+		if (n>0 && Wave.PerPlayerSquadDelayMod != 1.0)
+		{
+			F2 = Wave.PerPlayerSquadDelayMod;
+			for (i=1;i<n;i++)
+				F2 *= Wave.PerPlayerSquadDelayMod;
+			F2 = FClamp(F2, Wave.PerPlayerSquadDelayModMin, Wave.PerPlayerSquadDelayModMax);
+			if (F2<=0)
+				toLog("MonsterConfit: Error: CalcNextSquadSpawnTime->Wave.PerPlayerSquadDelayMod == 0");
+			F *= F2;
+		}
+		
+		Map = SandboxController.MapInfo;
+		if(Map.SquadDelayMod > 0)
+			F *= Map.SquadDelayMod;
 
-		F2 = FMax(0.f, (1.0 - SandboxController.MapInfo.PerPlayer.DelayBetweenSquadsCoeff));
-		F3 = SandboxController.GetNumPlayers(true) - 1;
-		if (F2>0 && F3>0)
-			 F *= FMax(0.1, F2*F3);
+		if (n>0 && Map.PerPlayerSquadDelayMod != 1.0)
+		{
+			F2 = Map.PerPlayerSquadDelayMod;
+			for (i=1;i<n;i++)
+				F2 *= Map.PerPlayerSquadDelayMod;
+			F2 = FClamp(F2, Map.PerPlayerSquadDelayModMin, Map.PerPlayerSquadDelayModMax);
+			if (F2<=0)
+				toLog("MonsterConfit: Error: CalcNextSquadSpawnTime->Map.PerPlayerSquadDelayMod == 0");
+			F *= F2;
+		}
 
-		NextSpawnTime =  F;
+		NextSpawnTime =  CurWaveInfo.SquadDelay * FMax(F, 0.1);
 
 		NextSpawnTime += SineMod * (NextSpawnTime * 2);
 
@@ -1080,6 +1101,31 @@ state MatchInProgress
 			}
 		}
 
+		// убираем камеру с босса, убитого не на финальной волне (например заспавнили патрика по RTD)
+		// смотри в DoBossDeath()
+		if (bBossView && !bWaveBossInProgress && BossViewBackTime < Level.TimeSeconds)
+		{
+			bBossView = false;
+			for ( C = Level.ControllerList; C != None; C = C.NextController )
+				if( PlayerController(C)!=None )
+				{
+					if( C.Pawn==None && !C.PlayerReplicationInfo.bOnlySpectator && bRespawnOnBoss )
+						C.ServerReStartPlayer();
+					if( C.Pawn!=None )
+					{
+						PlayerController(C).SetViewTarget(C.Pawn);
+						PlayerController(C).ClientSetViewTarget(C.Pawn);
+					}
+					else
+					{
+						PlayerController(C).SetViewTarget(C);
+						PlayerController(C).ClientSetViewTarget(C);
+					}
+					PlayerController(C).bBehindView = False;
+					PlayerController(C).ClientSetBehindView(False);
+				}
+		}
+
 		// БОСС
 		if( bWaveBossInProgress )
 		{
@@ -1177,7 +1223,7 @@ state MatchInProgress
 				if ( NumMonsters <= 0 )
                     DoWaveEnd();
 			} // all monsters spawned
-			else if ( NextMonsterTime < Level.TimeSeconds && (NumMonsters/* + NextSpawnSquad.Length */</*=*/ MaxMonsters) )
+			else if ( NextMonsterTime < Level.TimeSeconds && (MaxMonsters<10 || (NumMonsters + NextSpawnSquad.Length <= MaxMonsters) ) )
 			{
 				WaveEndTime = Level.TimeSeconds+160;
 				if( !bDisableZedSpawning )
@@ -1326,6 +1372,7 @@ function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector Hi
 	local MCMonsterInfo MonInfo;
 	local MCRepInfo tMCRepInfo;
 	local bool lDebug;
+	local float RewardScore;
 	lDebug=false;
 
 	if (lDebug) toLog("ReduceDamage() Original Damage:"@Damage);
@@ -1350,17 +1397,27 @@ function int ReduceDamage(int Damage, pawn injured, pawn instigatedBy, vector Hi
 	Damage = Super.ReduceDamage(Damage,injured,instigatedBy,HitLocation,Momentum,DamageType);
 	
 	// добавляем очки игроку (если bWaveFundSystem)
-	if (SandboxController.bWaveFundSystem)
+	if (SandboxController.GameInfo.bWaveFundSystem)
 	{
 		if (M!=none
+			&& instigatedBy != none
 			&& instigatedBy.PlayerReplicationInfo != none
 			&& PlayerController(instigatedBy.Controller) != none)
 		{
 			tMCRepInfo = SandboxController.GetMCRepInfo(instigatedBy.PlayerReplicationInfo);
 			if (tMCRepInfo!=none)
 			{
-				tMCRepInfo.WaveScore+=Damage;
-				tMCRepInfo.GameScore+=Damage;
+				if (MonInfo!=none && MonInfo.RewardScore!=-1)
+					RewardScore = MonInfo.RewardScore;
+				else RewardScore = M.ScoringValue;
+				
+				if(MonInfo!=none && MonInfo.RewardScoreCoeff != MonInfo.default.RewardScoreCoeff)
+					RewardScore*=MonInfo.RewardScoreCoeff;
+
+				RewardScore *= (float(Damage) / M.HealthMax);
+				
+				tMCRepInfo.WaveScore+=RewardScore;
+				tMCRepInfo.GameScore+=RewardScore;
 			}
 		}
 	}
@@ -1381,10 +1438,10 @@ function Killed(Controller Killer, Controller Killed, Pawn KilledPawn, class<Dam
 	{
 		MI = SandboxController.GetMonInfo(Killed);
 		if (MI==none)
-			SandboxController.LM("Killed KillMessages - MonserInfo not found for"@string(KilledPawn.Name));
+			SandboxController.LM("Error: Killed KillMessages - MonserInfo not found for"@string(KilledPawn.Name));
 
-		if( SandboxController.BroadcastKillmessagesMass < M.Mass
-			|| SandboxController.BroadcastKillmessagesHealth < M.HealthMax)
+		if( SandboxController.GameInfo.BroadcastKillmessagesMass < M.Mass
+			|| SandboxController.GameInfo.BroadcastKillmessagesHealth < M.HealthMax)
 		{
 			for( C=Level.ControllerList; C!=None; C=C.nextController )
 				if( C.bIsPlayer && PlayerController(C) != none && C.PlayerReplicationInfo != none )

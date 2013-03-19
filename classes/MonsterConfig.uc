@@ -1,8 +1,8 @@
-/*
+/* 
  * TODO:
- * 1. РЎРґРµР»Р°С‚СЊ GUI
- * 2. РўРµСЃС‚РёС‚СЊ
- *  
+ * 1. Сделать GUI
+ * 2. Тестить
+ *
  */
 //--------------------------------------------------------------------------------------------------
 class MonsterConfig extends Mutator
@@ -11,76 +11,81 @@ class MonsterConfig extends Mutator
 	ParseConfig
 	config(MonsterConfig);
 
-// РґР»СЏ СЂР°Р±РѕС‚С‹ LinkMesh
+// для работы LinkMesh
 #exec obj load file="KF_Freaks_Trip.ukx"
 #exec obj load file="KF_Freaks2_Trip.ukx"
 #exec obj load file="KF_Specimens_Trip_T"
 #exec obj load file="KF_Specimens_Trip_T_Two"
 
-// РіР»РѕР±Р°Р»СЊРЅС‹Рµ РјРЅРѕР¶РёС‚РµР»Рё
-var config int		FakedPlayersNum;
-var config float	MonstersMaxAtOnceMod,MonstersTotalMod;
-var config float	MonsterBodyHPMod,MonsterHeadHPMod,MonsterSpeedMod,MonsterDamageMod;
-var config float	HealedToScoreCoeff;
-var config int		BroadcastKillmessagesMass, BroadcastKillmessagesHealth;
-var config float	StandartGameDifficulty;
+// глобальные множители перенесены в GameInfo
 
-// РѕР±С‰РёРµ
+// общие
 var MCGameType					GT;
-var FileLog						MCLog; // РѕС‚РґРµР»СЊРЅС‹Р№ Р»РѕРі
-var config class<KFGameType>	GameTypeClass; // РїРѕР·РІРѕР»РёС‚СЊ СЋР·РµСЂР°Рј РЅР°СЃР»РµРґРѕРІР°С‚СЊ СѓР¶Рµ СЃРІРѕР№ GameType, РЅР°СЃР»РµРґРѕРІР°РЅС‹РЅР№ РѕС‚ РЅР°С€РµРіРѕ
+var FileLog						MCLog; // отдельный лог
+var config class<KFGameType>	GameTypeClass; // позволить юзерам наследовать уже свой GameType, наследованынй от нашего
 
-// Р·Р°РјРµРЅР° ZombieVolume РЅР° РЅР°С€Рё MCZombieVolume
-var array<ZombieVolume>			PendingZombieVolumes; // Р±СѓРґСѓС‚ Р·Р°РјРµРЅРµРЅС‹ РІ СЃР»РµРґ.С‚РёРєРµ
+// замена ZombieVolume на наши MCZombieVolume
+var array<ZombieVolume>			PendingZombieVolumes; // будут заменены в след.тике
 
-// РјР°СЃСЃРёРІС‹ РЅР°СЃС‚СЂРѕРµРє
+// массивы настроек
 var array<MCMonsterInfo>		Monsters;
 var array<MCSquadInfo>			Squads;
 var array<MCWaveInfo>			Waves;
 var MCMapInfo					MapInfo;
+var MCGameInfo					GameInfo; // глобальные коэффициенты перенесеты сюда, чтобы можно было перечитывать конфиг
 
-// С„РёРєСЃ РјРµС€Рё РїРѕ РЅРѕРІРѕРјСѓ
+var array<name> AddToServerPackages; // массив добавляет не стандартные классы из MonsterInfo;
+
+// фикс меши по новому
 struct FixMeshStruct
 {
 	var class<KFMonster>	MClass;
 	var Mesh				Mesh;
 	var array<Material>		Skins;
 };
-var config array<FixMeshStruct>	FixMeshInfoConfig;
-var array<MCFixMeshInfo>		FixMeshInfo;
-var MCStringReplicationInfo		RDataFixMeshInfo;
-var MCFixMeshInfo				tFixMeshInfo;
-var array<KFMonster>			PendingMonsters; // С‡РµСЂРµР· СЌС‚РѕС‚ РјР°СЃСЃРёРІ РёС‰РµРј Рё РґРѕР±Р°РІР»СЏРµРј РЅРµ СЃРІРѕРёС… РјРѕРЅСЃС‚СЂРѕРІ
-var bool						bFixChars;
+var config array<FixMeshStruct>	FixMeshInfoConfig;	// массив чтения из конфига
+var array<MCFixMeshInfo>		FixMeshInfo;		// основной массив
+var MCFixMeshInfo				tFixMeshInfo;		// временный массив для распаковки прибывших мешей
+var array<KFMonster>			PendingMonsters;	// через этот массив ищем и добавляем не своих монстров
+var bool						bFixChars;			// флаг, указывающий что все меши пофикшены
 
-// СЂРµРїР»РёРєР°С†РёСЏ Р·РЅР°С‡РµРЅРёР№ РЅР° РєР»РёРµРЅС‚С‹
-var const string				rDataDelim;
+// репликация значений на клиенты
+var const string				RDataDelim;
 var MCStringReplicationInfo		RDataMonsters;
 var MCStringReplicationInfo		RDataMapInfo;
-var MCMonsterList				AliveMonsters; // РјР°СЃСЃРёРІ СЃРѕРїРѕСЃС‚Р°РІР»РµРЅРёСЏ "РњРѕРЅСЃС‚СЂ - string(MonsterInfoName)"
+var MCStringReplicationInfo		RDataFixMeshInfo;
+var MCStringReplicationInfo		RDataGameInfo;
+var MCMonsterList				AliveMonsters; // массив сопоставления "Монстр - string(MonsterInfoName)"
 
-// РґР»СЏ СЃРёСЃС‚РµРјС‹ РЅР°РіСЂР°Рґ РѕС‚ РўРµР»Рѕ
-var config bool					bWaveFundSystem; // СѓРєР°Р·С‹РІР°РµС‚ РєР°РєР°СЏ СЃРёСЃС‚РµРјР° С„РѕРЅРґР° Р±СѓРґРµС‚ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊСЃСЏ
+// GUI
+var byte						menuRev, menuRevClient; // определяем, что меню нужно открыть
+var PlayerController			menuPC;	// какому игроку открыть меню
+var MCStringReplicationInfo		RDataGUI;
+var const string				RDataGUIdelim;
+
+// для системы наград от Тело (если GameInfo.bWaveFundSystem==true)
 var MCPerkStats					PerkStats;
-var array<PlayerController>		PendingPlayers; // РёРіСЂРѕРєРё, РєРѕС‚РѕСЂС‹Рј РїСЂРёСЃРІРѕРёС‚СЊ MCRepInfo
+var array<PlayerController>		PendingPlayers; // игроки, которым присвоить MCRepInfo
 
-// Р’ РїСЂРѕС„Р°Р№Р»РµСЂРµ РѕР±РЅР°СЂСѓР¶РёР»РѕСЃСЊ, С‡С‚Рѕ GetNumPlayers РґРѕРІРѕР»СЊРЅРѕ С‚СЏР¶РµР»Р°СЏ С„СѓРЅРєС†РёСЏ
-// РїРѕСЌС‚РѕРјСѓ РєСЌС€РёСЂСѓРµРј Р·РЅР°С‡РµРЅРёРµ Рё РѕР±РЅРѕРІР»СЏРµРј РµРіРѕ СЂРµР¶Рµ. NumPlayers С‚Р°Рє Р¶Рµ СЂРµРїР»РёС†РёСЂСѓРµС‚СЃСЏ РЅР° РєР»РёРµРЅС‚С‹
+// В профайлере обнаружилось, что GetNumPlayers довольно тяжелая функция
+// поэтому кэшируем значение и обновляем его реже. NumPlayers так же реплицируется на клиенты
 var int		NumPlayers;
 var float	NumPlayersRecalcTime;
 
 replication
 {
 	reliable if (ROLE==ROLE_Authority)
-		AliveMonsters, RDataMonsters, RDataMapInfo, RDataFixMeshInfo,
-		FakedPlayersNum, MonstersMaxAtOnceMod,MonstersTotalMod,
-		MonsterBodyHPMod, MonsterHeadHPMod, MonsterSpeedMod,MonsterDamageMod,
-		HealedToScoreCoeff, NumPlayers;
+		AliveMonsters, RDataMonsters, RDataMapInfo, RDataFixMeshInfo, RDataGameInfo,
+		menuPC, menuRev;
+
+	reliable if (bNetOwner && ROLE==ROLE_Authority)
+		RDataGUI;
 }
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 function PostBeginPlay()
 {
+	local int i;
 	toLog("PostBeginPlay()");
 	if (GameTypeClass==none || !ClassIsChildOf(GameTypeClass, class'MCGameType') )
 	{
@@ -95,18 +100,28 @@ function PostBeginPlay()
 	}
 	GT = MCGameType(Level.Game);
 
-	if (bWaveFundSystem)
-		PerkStats = new(None, "PerkStats") class'MCPerkStats';
-
 	ReadConfig();
-	SaveConfig();
+	CheckConfig();
+	// добавляем в ServerPackages новые пэкэджи, которые выявили при CheckConfig()
+	for( i=AddToServerPackages.Length-1; i>=0; --i )
+	{
+		LM("MonsterConfig->adding to ServerPackages:"@AddToServerPackages[i]);
+		AddToPackageMap(string(AddToServerPackages[i]));
+	}
 
-	RDataMonsters = spawn(class'MCStringReplicationInfo',self);
-	RDataMapInfo  = spawn(class'MCStringReplicationInfo',self);
+	if (GameInfo.bWaveFundSystem)
+		PerkStats = new(None, "PerkStats") class'MCPerkStats';
+	
+	//SaveConfig(); // портит все закомментированные строчки, пока отключим
+
+	// создаем и формируем массивы репликации клиентам
+	RDataMonsters	 = spawn(class'MCStringReplicationInfo',self);
+	RDataMapInfo	 = spawn(class'MCStringReplicationInfo',self);
 	RDataFixMeshInfo = spawn(class'MCStringReplicationInfo',self);
+	RDataGameInfo	 = spawn(class'MCStringReplicationInfo',self);
 	MakeRData();
 
-	AliveMonsters = spawn(class'MCMonsterList', self);
+	AliveMonsters	 = spawn(class'MCMonsterList', self);
 
 	GT.PostInit(Self);
 }
@@ -116,7 +131,7 @@ function MakeRData()
 	local int i, bBadCRC;
 	local string S, prevS;
 
-	// Р¤РѕСЂРјРёСЂСѓРµРј СЃС‚СЂРѕРєСѓ СЃРѕ РІСЃРµРјРё MonsterInfo РґР»СЏ СЂРµРїР»РёРєР°С†РёРё РєР»РёРµРЅС‚Р°Рј
+	// Формируем строку со всеми MonsterInfo для репликации клиентам
 	prevS = RDataMonsters.GetString(bBadCRC); S="";
 	for (i=0;i<Monsters.Length;i++)
 	{
@@ -125,15 +140,15 @@ function MakeRData()
 		S $= Monsters[i].Serialize();
 	}
 	if (prevS != S)
-		RDataMonsters.SetString(S); // СѓРІРµР»РёС‡РёРІР°РµС‚ revision, С‡С‚Рѕ РґР°С‘С‚ РєР»РёРµРЅС‚Сѓ РїРѕРЅСЏС‚СЊ Рѕ РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚Рё РїСЂРёРјРµРЅРµРЅРёСЏ РїРѕР»СѓС‡РµРЅС‹С… РЅР°СЃС‚СЂРѕРµРє
+		RDataMonsters.SetString(S); // увеличивает revision, что даёт клиенту понять о необходимости применения полученых настроек
 
-	// Р¤РѕСЂРјРёСЂСѓРµРј СЃС‚СЂРѕРєСѓ MapInfo РґР»СЏ СЂРµРїР»РёРєР°С†РёРё РєР»РёРµРЅС‚Р°Рј
+	// Формируем строку MapInfo для репликации клиентам
 	prevS = RDataMapInfo.GetString(bBadCRC); S="";
 	S = MapInfo.Serialize();
 	if (prevS != S)
 		RDataMapInfo.SetString(S);
 
-	// Р¤РѕСЂРјРёСЂСѓРµРј СЃС‚СЂРѕРєСѓ FixMeshInfo
+	// Формируем строку FixMeshInfo
 	prevS = RDataFixMeshInfo.GetString(bBadCRC); S="";
 	for (i=0;i<FixMeshInfo.Length;i++)
 	{
@@ -143,9 +158,89 @@ function MakeRData()
 	}
 	if (prevS != S)
 		RDataFixMeshInfo.SetString(S);
+		
+	// Формируем GameInfo (глобальные коэффициенты)
+	prevS = RDataGameInfo.GetString(bBadCRC); S="";
+	S = GameInfo.Serialize();
+	if (prevS != S)
+		RDataGameInfo.SetString(S);
 }
 //--------------------------------------------------------------------------------------------------
-// РРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј РІСЃРµ РїР°СЂР°РјРµС‚СЂС‹ РјРѕРЅСЃС‚СЂР° РІС‹Р·С‹РІР°РµС‚СЃСЏ РёР· MCZombieVolume
+function string MakeRDataGUI()
+{
+	local int		i;
+	local string	S, retS;
+
+// Monsters
+	S="";
+	for (i=0;i<Monsters.Length;i++)
+	{
+		if (Len(S)>0)
+			S $= rDataDelim;
+		S $= Monsters[i].Serialize();
+	}
+	if (Len(S)>0)
+		retS = "Monsters:" $ S;
+// Squads
+	S="";
+	for (i=0;i<Squads.Length;i++)
+	{
+		if (Len(S)>0)
+			S $= rDataDelim;
+		S $= Squads[i].Serialize();
+	}
+	if (Len(S)>0)
+		retS = retS $ RDataGUIdelim $ "Squads:" $ S;
+// Waves
+	S="";
+	for (i=0;i<Waves.Length;i++)
+	{
+		if (Len(S)>0)
+			S $= rDataDelim;
+		S $= Waves[i].Serialize();
+	}
+	if (Len(S)>0)
+		retS = retS $ RDataGUIdelim $ "Waves:" $ S;
+// MapInfo
+	S=""; S = MapInfo.Serialize();
+	if (Len(S)>0)
+		retS = retS $ RDataGUIdelim $ "MapInfo:" $ S;
+// GameInfo
+	S=""; S = GameInfo.Serialize();
+	if (Len(S)>0)
+		retS = retS $ RDataGUIdelim $ "GameInfo:" $ S;
+	
+	return retS;
+}
+//--------------------------------------------------------------------------------------------------
+simulated function ExtractRDataGUI(string input)
+{
+	local int i, n;
+	local string S;
+	local array<string> iData;
+	//S = RDataGUI.Unserialize();
+	n = Split(input, RDataGUIdelim, iData);
+	for (i=0; i<n; i++)
+	{
+		S = iData[i]; // TODO заменить S на iData[i]
+		if (InStr(iData[i], "Monsters:")==0)
+			ExtractMonsters( Right(S, Len(S)-Len("Monsters:")), true );
+			
+		else if (InStr(iData[i], "Squads:")==0)
+			ExtractSquads( Right(S, Len(S)-Len("Squads:")), true );
+			
+		else if (InStr(iData[i], "Waves:")==0)
+			ExtractWaves( Right(S, Len(S)-Len("Waves:")), true );
+			
+		else if (InStr(iData[i], "MapInfo:")==0)
+			ExtractMapInfo( Right(S, Len(S)-Len("MapInfo:")) );
+
+		else if (InStr(iData[i], "GameInfo:")==0)
+			ExtractGameInfo( Right(S, Len(S)-Len("GameInfo:")) );
+	}
+}
+//--------------------------------------------------------------------------------------------------
+// Инициализируем все параметры монстра вызывается из MCZombieVolume
 simulated function InitMonster(KFMonster M, string MIName)
 {
 	local int i, PlayersCount;
@@ -156,32 +251,10 @@ simulated function InitMonster(KFMonster M, string MIName)
 	local array<Material> tSkins;
 	local bool lDebug;
 
-	// РµСЃР»Рё СЌС‚Рѕ СЃС‚Р°РЅРґР°СЂС‚РЅС‹Р№ РјРѕР±, РїСЂРѕРІРµСЂСЏРµРј Рё С„РёРєСЃРёРј РµРјСѓ РјРµС€ Рё СЃРєРёРЅ
+	// если это стандартный моб, проверяем и фиксим ему меш и скин
 	lDebug = true;
 	if (MIName=="_def_")
-	{
-		if (M.Mesh==none)
-		{
-			if (lDebug) LM("InitMonster->Repair Mesh...");
-			tMesh = GetDefaultMesh(M.Class);
-			M.UpdateDefaultMesh(tMesh);
-			M.static.UpdateDefaultMesh(tMesh);
-			M.Class.static.UpdateDefaultMesh(tMesh);
-			M.LinkMesh(tMesh);
-		}
-		if (M.Skins[0]==none)
-		{
-			if (lDebug) LM("InitMonster->Repair Skins...");
-			GetDefaultSkins(M.Class, tSkins);
-			for (i=0; i<tSkins.Length; i++)
-			{
-				M.Skins[i] = tSkins[i];
-				M.default.Skins[i] = tSkins[i];
-			}
-		}
-		return;
-	}
-		
+		goto 'InitMesh';
 
 	MI = GetMonInfoByName(MIName);
 	if (MI==none)
@@ -189,7 +262,7 @@ simulated function InitMonster(KFMonster M, string MIName)
 		LM("Error: InitMonster MonsterInfo load failed:"@MIName);
 		return;
 	}
-	PlayersCount = GetNumPlayers(true) - 1; // Р’Р«Р§РРўРђР•Рњ РЈР–Р• РўРЈРў
+	PlayersCount = GetNumPlayers(true) - 1; // ВЫЧИТАЕМ УЖЕ ТУТ
 
 	lDebug=false;
 	if (lDebug) LM("-------------");
@@ -202,8 +275,8 @@ simulated function InitMonster(KFMonster M, string MIName)
 	F += float(MI.PerPlayer.Health * Max(0,PlayersCount));
 	if (MI.HealthMax != -1)
 		F = FMin(MI.HealthMax, F);
-	M.Health = F * (MonsterBodyHPMod * MapInfo.MonsterBodyHPMod);
-	
+	M.Health = F * (GameInfo.MonsterBodyHPMod * MapInfo.MonsterBodyHPMod);
+
 	Z = ZombieBoss(M);
 	if (Z!=none)
 	{
@@ -222,11 +295,11 @@ simulated function InitMonster(KFMonster M, string MIName)
 	F += MI.PerPlayer.HeadHealth * Max(0,PlayersCount);
 	if (MI.HeadHealthMax != -1)
 		F = FMin(MI.HeadHealthMax, F);
-	M.HeadHealth = F * (MonsterHeadHPMod * MapInfo.MonsterHeadHPMod);
+	M.HeadHealth = F * (GameInfo.MonsterHeadHPMod * MapInfo.MonsterHeadHPMod);
 	if (lDebug) LM("Init 2"@MI.MonsterName@"M.Health:"@M.Health@"M.HealthMax:"@M.HealthMax);
-	
-	// РЅРµ Р·РЅР°СЋ Р·Р°С‡РµРј СЏ СЌС‚Рѕ РґРѕР±Р°РІР»СЏР», РЅРѕ РёР·-Р·Р° СЌС‚РѕРіРѕ РµСЃР»Рё РєР°СЂС‚РѕРґРµР» СЃРїР°РІРЅРёС‚ РєР»РѕС‚Р°, РґР»СЏ РєРѕРјР°РЅРґРѕСЃР°
-	// РЅР° С…РµР»СЃР±Р°СЂРµ Сѓ РЅРµРіРѕ Р±СѓРґСѓС‚ РѕС‚РѕР±СЂР°Р¶Р°С‚СЊСЃСЏ РЅРµ С‚Рµ Р¶РёР·РЅРё, С‚.Рє. РЅР°РґРѕ РµС‰Рµ HealthMax РјРµРЅСЏС‚СЊ, РїРѕС…РѕР¶Рµ
+
+	// не знаю зачем я это добавлял, но из-за этого если картодел спавнит клота, для командоса
+	// на хелсбаре у него будут отображаться не те жизни, т.к. надо еще HealthMax менять, похоже
 	//M.default.Health = M.Health;
 	//M.default.HeadHealth = M.HeadHealth;
 
@@ -245,12 +318,12 @@ simulated function InitMonster(KFMonster M, string MIName)
 		M.AirSpeed = M.GroundSpeed * 1.10;
 	}
 
-	M.OriginalGroundSpeed *= MonsterSpeedMod * MapInfo.MonsterSpeedMod;
+	M.OriginalGroundSpeed *= GameInfo.MonsterSpeedMod * MapInfo.MonsterSpeedMod;
 	M.GroundSpeed = M.OriginalGroundSpeed;
-	M.WaterSpeed *= MonsterSpeedMod * MapInfo.MonsterSpeedMod;
-	M.AirSpeed *= MonsterSpeedMod * MapInfo.MonsterSpeedMod;
+	M.WaterSpeed *= GameInfo.MonsterSpeedMod * MapInfo.MonsterSpeedMod;
+	M.AirSpeed *= GameInfo.MonsterSpeedMod * MapInfo.MonsterSpeedMod;
 
-	TempDamage = M.MeleeDamage * MonsterDamageMod * MapInfo.MonsterDamageMod;
+	TempDamage = M.MeleeDamage * GameInfo.MonsterDamageMod * MapInfo.MonsterDamageMod;
 	M.MeleeDamage = TempDamage;
 	TempDamage = TempDamage - float(M.MeleeDamage);
 
@@ -259,7 +332,7 @@ simulated function InitMonster(KFMonster M, string MIName)
 		M.MeleeDamage += 1;
 	}
 
-	TempDamage = M.ScreamDamage * MonsterDamageMod * MapInfo.MonsterDamageMod;
+	TempDamage = M.ScreamDamage * GameInfo.MonsterDamageMod * MapInfo.MonsterDamageMod;
 	M.MeleeDamage = TempDamage;
 	TempDamage = TempDamage - float(M.MeleeDamage);
 
@@ -291,21 +364,239 @@ simulated function InitMonster(KFMonster M, string MIName)
 		//C.Pawn.CrouchRadius  *= newPlayerSize;
 	}
 */
+
+InitMesh:
 	lDebug=false;
-	if (lDebug) LM("Init mesh for"@MI.MonsterName@"Mesh"@string(MI.Mesh[0]));
-	if (MI.Mesh.Length>0 && MI.Mesh[0] != none)
-		M.LinkMesh(MI.Mesh[0]);
-	if (lDebug) LM("Init skins for"@MI.MonsterName@"Skin[0]"@string(MI.Skins[0]));
-	if (MI.Skins.Length>0 && MI.Skins[0] != none)
-		for (i=0; i<MI.Skins.Length;i++)
+	if (MI!=none)
+	{
+		if (lDebug) LM("Init mesh for"@MI.MonsterName@"Mesh"@string(MI.Mesh[0]));
+		if (MI.Mesh.Length>0 && MI.Mesh[0] != none)
+			M.LinkMesh(MI.Mesh[0]);
+		if (lDebug) LM("Init skins for"@MI.MonsterName@"Skin[0]"@string(MI.Skins[0]));
+		if (MI.Skins.Length>0 && MI.Skins[0] != none)
+			for (i=0; i<MI.Skins.Length;i++)
+			{
+				if (lDebug) LM("MI.Skins["$i$"]:"@string(MI.Skins[i]));
+				if (MI.Skins[i]!=none)
+					M.Skins[i] = MI.Skins[i];
+			}
+	}
+
+	if (M.Mesh==none)
+	{
+		if (lDebug) LM("InitMonster->Repair Mesh...");
+		tMesh = GetDefaultMesh(M.Class);
+		M.UpdateDefaultMesh(tMesh);
+		M.static.UpdateDefaultMesh(tMesh);
+		M.Class.static.UpdateDefaultMesh(tMesh);
+		M.LinkMesh(tMesh);
+	}
+	if (M.Skins[0]==none)
+	{
+		if (lDebug) LM("InitMonster->Repair Skins...");
+		GetDefaultSkins(M.Class, tSkins);
+		for (i=0; i<tSkins.Length; i++)
 		{
-			if (lDebug) LM("MI.Skins["$i$"]:"@string(MI.Skins[i]));
-			if (MI.Skins[i]!=none)
-				M.Skins[i] = MI.Skins[i];
+			M.Skins[i] = tSkins[i];
+			M.default.Skins[i] = tSkins[i];
 		}
+	}
 }
 //--------------------------------------------------------------------------------------------------
+final function AddServerPackage(name N)
+{
+	local int i;
+
+	if (N=='KFMod' || N=='KFChar')
+		return;
+
+	for( i=AddToServerPackages.Length-1; i>=0; --i )
+		if( AddToServerPackages[i]==N )
+			return;
+	AddToServerPackages[AddToServerPackages.Length] = N;
+}
+//--------------------------------------------------------------------------------------------------
+function Mutate(string input, PlayerController PC)
+{
+	local int n;
+	local array<string> iSplit;
+	local bool lDebug;
+	lDebug = true;
+	super.Mutate(input,PC);
+	log("MonsterConfig mutate input"@input);
+	n = Split(input," ", iSplit);
+	if ( n<2 || Caps(iSplit[0]) != "MC" )
+		return;
+	if (iSplit[1]~="reinit")
+	{
+		CheckConfig();
+		ReInit();
+		PC.ClientMessage("MonsterConfig->CheckConfig(), ReInit()");
+		return;
+	}
+	else if (iSplit[1]~="menu")
+	{
+		menuPC = PC;
+		menuRev++;
+		if (RDataGUI==none)
+			RDataGUI = Spawn(class'MCStringReplicationInfo', PC);
+		RDataGUI.SetOwner(PC);
+		RDataGUI.OwnerPC = PC;
+		RDataGUI.bMenuStr = true;
+		RDataGUI.SetString( MakeRDataGUI() );
+		RDataGUI.revisionClient = RDataGUI.revision; // сервер отреагирует, после того как клиент изменит
+		if (lDebug) PC.ClientMessage("MonsterConfig: Open Menu #"$menuRev);
+		return;
+	}
+	PC.ClientMessage("MonsterConfig Commandlet"@iSplit[1]@"not found");
+}
+//--------------------------------------------------------------------------------------------------
+// При получении новых данных от GUI, в Tick() вызывается эта функция
+// переинициализирует настройки GameType в соответсвии с полученными данными
+// TODO проверить
+function ReInit()
+{
+	local int i;
+	local MCWaveInfo tWaveInfo;
+	
+	//InitGame
+	GT.GameDifficulty = GameInfo.GameDifficulty;
+
+	if (GT.CurWaveInfo!=none)
+	{
+		i = GT.CurWaveInfo.Position;
+		tWaveInfo = GT.CurWaveInfo;
+		GT.CurWaveInfo = GetWave(string(GT.CurWaveInfo.Name));
+	}
+	if (GT.CurWaveInfo==none)
+		GT.CurWaveInfo = GetNextWaveInfo(tWaveInfo);
+	
+	GT.MCSetupWave(true); // bReinit = true;
+}
+//--------------------------------------------------------------------------------------------------
+/*function ReReadConfig() // УДАЛИТЬ перечитать конфиг нельзя
+{
+	local int i;
+	local MCWaveInfo tWaveInfo;
+	// очистка массивов перед чтением
+	if (GameInfo!=none)
+	{
+		Level.ObjectPool.FreeObject(GameInfo);
+		GameInfo = none;
+	}
+	if (MapInfo!=none)
+	{
+		MapInfo.Waves.Remove(0,MapInfo.Waves.Length);
+		Level.ObjectPool.FreeObject(MapInfo);
+		MapInfo = none;
+	}
+	for (i=Monsters.Length-1; i>=0; --i)
+	{
+		Monsters[i].MonsterClass.Remove(0,Monsters[i].MonsterClass.Length);
+		Monsters[i].Resist.Remove(0,Monsters[i].Resist.Length);
+		Monsters[i].Mesh.Remove(0,Monsters[i].Mesh.Length);
+		Monsters[i].Skins.Remove(0,Monsters[i].Skins.Length);
+		Level.ObjectPool.FreeObject(Monsters[i]);
+		Monsters[i]=none;
+		Monsters.Remove(i,1);
+	}
+	for (i=Squads.Length-1; i>=0; --i)
+	{
+		Squads[i].Monster.Remove(0,Squads[i].Monster.Length);
+		Level.ObjectPool.FreeObject(Squads[i]);
+		Squads[i]=none;
+		Squads.Remove(i,1);		
+	}
+	for (i=Waves.Length-1; i>=0; --i)
+	{
+		Waves[i].Squad.Remove(0,Waves[i].Squad.Length);
+		Waves[i].SpecialSquad.Remove(0,Waves[i].SpecialSquad.Length);
+		Level.ObjectPool.FreeObject(Waves[i]);
+		Waves[i]=none;
+		Waves.Remove(i,1);		
+	}
+	
+	ReadConfig();
+	CheckConfig();
+	
+	//InitGame
+	GT.GameDifficulty = GameInfo.GameDifficulty;
+	
+	//SetupWave
+	//GT.AdjustedDifficulty = GameInfo.GameDifficulty;
+	//GT.FinalWave = Waves.Length - 1;
+	if (GT.CurWaveInfo!=none)
+	{
+		i = GT.CurWaveInfo.Position;
+		tWaveInfo = GT.CurWaveInfo;
+		GT.CurWaveInfo = GetWave(string(GT.CurWaveInfo.Name));
+	}
+	if (GT.CurWaveInfo==none)
+		GT.CurWaveInfo = GetNextWaveInfo(tWaveInfo);
+	
+	GT.MCSetupWave(true); // bReinit = true;
+	
+	MakeRData();
+}*/
+//--------------------------------------------------------------------------------------------------
 function ReadConfig()
+{
+	local int i,j,n;
+	local array<string> Names;
+
+	// чтение FixMeshInfo's
+	if (FixMeshInfo.Length==0)
+		for (i=0; i<FixMeshInfoConfig.Length; i++)
+		{
+			if (FixMeshInfoConfig[i].Mesh==none) 
+				FixMeshInfoConfig[i].Mesh = GetDefaultMesh(FixMeshInfoConfig[i].MClass);
+			if (FixMeshInfoConfig[i].Skins.Length==0 || FixMeshInfoConfig[i].Skins[0]==none)
+				GetDefaultSkins(FixMeshInfoConfig[i].MClass, FixMeshInfoConfig[i].Skins);
+			
+			n = FixMeshInfo.Length;
+			FixMeshInfo.Insert(n,1);
+			FixMeshInfo[n] = new(none) class'MCFixMeshInfo';
+			FixMeshInfo[n].MClass = FixMeshInfoConfig[i].MClass;
+			FixMeshInfo[n].Mesh = FixMeshInfoConfig[i].Mesh;
+			if (FixMeshInfo[n].Skins.Length < FixMeshInfoConfig[i].Skins.Length)
+				FixMeshInfo[n].Skins.Length = FixMeshInfoConfig[i].Skins.Length;
+			for (j=0;j<FixMeshInfoConfig[i].Skins.Length; j++)
+				FixMeshInfo[n].Skins[j] = FixMeshInfoConfig[i].Skins[j];
+		}
+	GameInfo = new(None, "GameInfo") class'MCGameInfo';
+
+// МОНСТРЫ
+	Names = class'MCMonsterInfo'.static.GetNames();
+	for (i = 0; i < Names.length; i++)
+	{
+		if (Len(Names[i])==0) continue;
+		Monsters[Monsters.Length] = new(None, Names[i]) class'MCMonsterInfo';
+	}
+// ОТРЯДЫ
+	Names = class'MCSquadInfo'.static.GetNames();
+	for (i = 0; i < Names.length; i++)
+	{
+		if (Len(Names[i])==0) continue;
+		Squads[Squads.Length] = new(None, Names[i]) class'MCSquadInfo';
+	}
+// ВОЛНЫ
+	Names = class'MCWaveInfo'.static.GetNames();
+	for (i = 0; i < Names.length; i++)
+	{
+		if (Len(Names[i])==0) continue;
+		Waves[Waves.Length] = new(None, Names[i]) class'MCWaveInfo';
+	}
+// КАРТО-зависимые переменные
+	Names = class'MCMapInfo'.static.GetNames();
+	for (i = 0; i < Names.length; i++)
+		if (string(Level.outer.name) ~= Names[i])
+			{MapInfo = new(None, Names[i]) class'MCMapInfo'; break;}
+	// если для данной карты нет переменных, читаем default значения
+	if (MapInfo==none)
+		MapInfo = new(None, "default") class'MCMapInfo';
+}
+//--------------------------------------------------------------------------------------------------
+/*function ReadConfigOld()
 {
 	local int i,j,n;
 	local array<string> Names;
@@ -314,47 +605,62 @@ function ReadConfig()
 	local MCWaveInfo	tWaveInfo;
 	local MCMapInfo		tMapInfo;
 
-	// С‡С‚РµРЅРёРµ FixMeshInfo's
-	for (i=0;i<FixMeshInfoConfig.Length;i++)
-	{
-		FixMeshInfoConfig[i].Mesh = GetDefaultMesh(FixMeshInfoConfig[i].MClass);
-		GetDefaultSkins(FixMeshInfoConfig[i].MClass, FixMeshInfoConfig[i].Skins);
-		
-		n = FixMeshInfo.Length;
-		FixMeshInfo.Insert(n,1);
-		FixMeshInfo[n] = new(none) class'MCFixMeshInfo';
-		FixMeshInfo[n].MClass = FixMeshInfoConfig[i].MClass;
-		FixMeshInfo[n].Mesh = FixMeshInfoConfig[i].Mesh;
-		if (FixMeshInfo[n].Skins.Length < FixMeshInfoConfig[i].Skins.Length)
-			FixMeshInfo[n].Skins.Length = FixMeshInfoConfig[i].Skins.Length;
-		for (j=0;j<FixMeshInfoConfig[i].Skins.Length; j++)
-			FixMeshInfo[n].Skins[j] = FixMeshInfoConfig[i].Skins[j];
-	}
+	// чтение FixMeshInfo's
+	if (FixMeshInfo.Length==0)
+		for (i=0;i<FixMeshInfoConfig.Length;i++)
+		{
+			if (FixMeshInfoConfig[i].Mesh==none) 
+				FixMeshInfoConfig[i].Mesh = GetDefaultMesh(FixMeshInfoConfig[i].MClass);
+			if (FixMeshInfoConfig[i].Skins.Length==0 || FixMeshInfoConfig[i].Skins[0]==none)
+				GetDefaultSkins(FixMeshInfoConfig[i].MClass, FixMeshInfoConfig[i].Skins);
+			
+			n = FixMeshInfo.Length;
+			FixMeshInfo.Insert(n,1);
+			FixMeshInfo[n] = new(none) class'MCFixMeshInfo';
+			FixMeshInfo[n].MClass = FixMeshInfoConfig[i].MClass;
+			FixMeshInfo[n].Mesh = FixMeshInfoConfig[i].Mesh;
+			if (FixMeshInfo[n].Skins.Length < FixMeshInfoConfig[i].Skins.Length)
+				FixMeshInfo[n].Skins.Length = FixMeshInfoConfig[i].Skins.Length;
+			for (j=0;j<FixMeshInfoConfig[i].Skins.Length; j++)
+				FixMeshInfo[n].Skins[j] = FixMeshInfoConfig[i].Skins[j];
+		}
 
-	// С‡С‚РµРЅРёРµ РѕРїРёСЃР°РЅРёР№ РјРѕРЅСЃС‚СЂРѕРІ
+	GameInfo = new(None, "GameInfo") class'MCGameInfo';
+
+// МОНСТРЫ
 	Names = class'MCMonsterInfo'.static.GetNames();
 	for (i = 0; i < Names.length; i++)
 	{
 		if (Len(Names[i])==0) continue;
 		tMonsterInfo = new(None, Names[i]) class'MCMonsterInfo';
-		if (tMonsterInfo.MonsterClass != none)
+		for (j=tMonsterInfo.MonsterClass.Length-1; j>=0; --j)
 		{
-			// РµСЃР»Рё С‚СЂРёРїС‹ СѓРґР°Р»РёР»Рё Mesh РІ РѕС‡РµСЂРµРґРЅРѕР№ СЂР°Р·
-			if (tMonsterInfo.MonsterClass.default.Mesh==none && tMonsterInfo.Mesh.Length==0)
-				tMonsterInfo.Mesh[0] = GetDefaultMesh(tMonsterInfo.MonsterClass);
-			if( (tMonsterInfo.MonsterClass.default.Skins.Length==0
-				||tMonsterInfo.MonsterClass.default.Skins[0]==none) && tMonsterInfo.Skins.Length==0 )
-				GetDefaultSkins(tMonsterInfo.MonsterClass, tMonsterInfo.Skins);
+			if (tMonsterInfo.MonsterClass[j] != none)
+			{
+				// если трипы удалили Mesh в очередной раз
+				/*if (tMonsterInfo.MonsterClass[j].default.Mesh==none && tMonsterInfo.Mesh.Length==0)
+					tMonsterInfo.Mesh[0] = GetDefaultMesh(tMonsterInfo.MonsterClass[j]);
+				if( (tMonsterInfo.MonsterClass[j].default.Skins.Length==0
+					||tMonsterInfo.MonsterClass[j].default.Skins[0]==none) && tMonsterInfo.Skins.Length==0 )
+					GetDefaultSkins(tMonsterInfo.MonsterClass[j], tMonsterInfo.Skins);*/
 
-			Monsters[Monsters.Length] = tMonsterInfo;
+				AddServerPackage( tMonsterInfo.MonsterClass[j].Outer.Name );
+			}
+			else
+			{
+				tMonsterInfo.MonsterClass.Remove(j,1);
+				toLog("Monster:"@string(tMonsterInfo.Name)$". MonsterClass["$j$"] not found. Check settings in"@class'MCMonsterInfo'.default.ConfigFile$".ini");
+			}
 		}
+		if (tMonsterInfo.MonsterClass.Length>0)
+			Monsters[Monsters.Length] = tMonsterInfo;
 		else
-			toLog("Monster:"@string(tMonsterInfo.Name)$". MClass not found. Check settings in"@class'MCMonsterInfo'.default.ConfigFile$".ini");
+			toLog("Monster:"@string(tMonsterInfo.Name)$". Will be not loaded. No valid MonsterClasses found. Check settings in"@class'MCMonsterInfo'.default.ConfigFile$".ini");
 	}
 	if (Monsters.Length==0)
 		toLog("No valid Monsters found! So no monsters will spawn");
 
-	// С‡С‚РµРЅРёРµ РѕРїРёСЃР°РЅРёР№ РѕС‚СЂСЏРґРѕРІ
+// ОТРЯДЫ
 	Names = class'MCSquadInfo'.static.GetNames();
 	for (i = 0; i < Names.length; i++)
 	{
@@ -387,29 +693,29 @@ function ReadConfig()
 	if (Squads.Length==0)
 		toLog("No valid Squads found! So no monsters will spawn");
 
-	// С‡С‚РµРЅРёРµ РѕРїРёСЃР°РЅРёР№ РІРѕР»РЅ
+// ВОЛНЫ
 	Names = class'MCWaveInfo'.static.GetNames();
 	for (i = 0; i < Names.length; i++)
 	{
 		if (Len(Names[i])==0) continue;
 		tWaveInfo = new(None, Names[i]) class'MCWaveInfo';
-		 // РїСЂРѕРїСѓСЃРєР°РµРј РІ СЌС‚РѕРј РјРµСЃС‚Рµ, РµСЃР»Рё РІРѕР»РЅР° СЃРєРѕРЅС„РёРіСѓСЂРµРЅР° С‚РѕР»СЊРєРѕ РґР»СЏ РѕРїСЂРµРґРµР»РµРЅРЅС‹С… РєР°СЂС‚
+		 // пропускаем в этом месте, если волна сконфигурена только для определенных карт
 		if (tWaveInfo.bMapSpecific)
 			continue;
 
-		if (isValidWave(tWaveInfo)) // РїСЂРѕРІРµСЂСЏРµС‚ РµСЃС‚СЊ Р»Рё РІР°Р»РёРґРЅС‹Рµ СЃРєРІР°РґС‹ РІ РІРѕР»РЅРµ
+		if (isValidWave(tWaveInfo)) // проверяет есть ли валидные сквады в волне
 		{
-			if (tWaveInfo.Position==-1) // РµСЃР»Рё РґР»СЏ РІРѕР»РЅС‹ РЅРµ СѓРєР°Р·Р°Р»Рё Position
+			if (tWaveInfo.Position==-1) // если для волны не указали Position
 			{
-				// РїС‹С‚Р°РµРјСЃСЏ РІС‹СЏСЃРЅРёС‚СЊ РЅРѕРјРµСЂ РІРѕР»РЅС‹ РёСЃС…РѕРґСЏ РёР· РЅР°Р·РІР°РЅРёСЏ РІРѕР»РЅС‹ (Wave_4lol) = 4СЏ РІРѕР»РЅР°
+				// пытаемся выяснить номер волны исходя из названия волны (Wave_4lol) = 4я волна
 				if ( !TryGetNumber(string(tWaveInfo.Name), tWaveInfo.Position) )
 				{
 					tWaveInfo.Position = FMax(GetLastWave().Position,0.f) + 0.1;
 					toLog("Wave:"@string(tWaveInfo.Name)@"Position not specified. Also no numbers in WaveName. So position will be"@tWaveInfo.Position@". Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
 				}
-				// TODO РґРµР»Р°С‚СЊ Р»Рё tWaveInfo.SaveConfig(), С‡С‚РѕР±С‹ Р·Р°РїРёСЃР°С‚СЊ С‚РѕР»СЊРєРѕ С‡С‚Рѕ РЅР°Р№РґРµРЅС‹Р№ Position?? РўРѕРіРґР° РёР· РєРѕРЅС„РёРіР° СѓРґР°Р»СЏС‚СЃСЏ РЅРµРІР°Р»РёРґРЅС‹Рµ СЃРєРІР°РґС‹
+				// TODO делать ли tWaveInfo.SaveConfig(), чтобы записать только что найденый Position?? Тогда из конфига удалятся невалидные сквады
 			}
-			while (bWavePositionAlreadyExist(tWaveInfo.Position))
+			while (bWavePositionAlreadyExist(tWaveInfo.Position)>1)
 			{
 				toLog("Wave:"@string(tWaveInfo.Name)@"Position"@tWaveInfo.Position@"already exists. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
 				tWaveInfo.Position+=0.1;
@@ -423,7 +729,7 @@ function ReadConfig()
 	if(Waves.Length==0)
 		toLog("No valid WaveInfo's found! So no monsters will spawn");
 
-	// С‡С‚РµРЅРёРµ РїРµСЂРµРјРµРЅРЅС‹С…, Р·Р°РІРёСЃРёРјС‹С… РѕС‚ РєР°СЂС‚С‹
+// КАРТЫ
 	tMapInfo=none;
 	Names = class'MCMapInfo'.static.GetNames();
 	for (i = 0; i < Names.length; i++)
@@ -434,7 +740,7 @@ function ReadConfig()
 			break;
 		}
 	}
-	// РµСЃР»Рё РґР»СЏ РґР°РЅРЅРѕР№ РєР°СЂС‚С‹ РЅРµС‚ РїРµСЂРµРјРµРЅРЅС‹С…, С‡РёС‚Р°РµРј default Р·РЅР°С‡РµРЅРёСЏ
+	// если для данной карты нет переменных, читаем default значения
 	if (tMapInfo==none)
 		tMapInfo = new(None, "default") class'MCMapInfo';
 
@@ -447,8 +753,8 @@ function ReadConfig()
 			i--;
 			continue;
 		}
-		// РµСЃР»Рё РІРѕР»РЅР° СѓР¶Рµ Р·Р°РіСЂСѓР¶РµРЅР°. Р­С‚Р° РїСЂРѕРІРµСЂРєР° РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ РЅСѓР¶РЅР°. РёРЅР°С‡Рµ РїСЂРё Р·Р°РіСЂСѓР·РєРµ РІРѕР»РЅС‹ РЅРёР¶Рµ,
-		// СѓР¶Рµ Сѓ Р·Р°РіСЂСѓР¶РµРЅРЅРѕР№ РІРѕР»РЅС‹ РјРѕР¶РµС‚ СЃР±РёС‚СЊСЃСЏ Position, СѓСЃС‚Р°РЅРѕРІР»РµРЅРЅС‹Р№ РІС‹С€Рµ.
+		// если волна уже загружена. Эта проверка обязательно нужна. иначе при загрузке волны ниже,
+		// уже у загруженной волны может сбиться Position, установленный выше.
 		if (GetWave(tMapInfo.Waves[i]) != none)
 		{
 			tMapInfo.Waves.Remove(i,1);
@@ -456,7 +762,7 @@ function ReadConfig()
 			continue;
 		}
 		tWaveInfo = new(None, tMapInfo.Waves[i]) class'MCWaveInfo';
-		if (tWaveInfo.bMapSpecific==false) // РѕР±С‹С‡РЅР°СЏ РІРѕР»РЅР°, РѕРЅР° Рё С‚Р°Рє Р±СѓРґРµС‚ Р·Р°РіСЂСѓР¶РµРЅР°
+		if (tWaveInfo.bMapSpecific==false) // обычная волна, она и так будет загружена
 		{
 			toLog("MapInfo:"@string(tMapInfo.Name)@"| WaveName"@string(tWaveInfo.Name)@"is not map-specific, so already loaded. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
 			tMapInfo.Waves.Remove(i,1);
@@ -465,15 +771,15 @@ function ReadConfig()
 		}
 		if (isValidWave(tWaveInfo))
 		{
-			if (tWaveInfo.Position==-1) // РµСЃР»Рё РґР»СЏ РІРѕР»РЅС‹ РЅРµ СѓРєР°Р·Р°Р»Рё Position
+			if (tWaveInfo.Position==-1) // если для волны не указали Position
 			{
-				// РїС‹С‚Р°РµРјСЃСЏ РІС‹СЏСЃРЅРёС‚СЊ РЅРѕРјРµСЂ РІРѕР»РЅС‹ РёСЃС…РѕРґСЏ РёР· РЅР°Р·РІР°РЅРёСЏ РІРѕР»РЅС‹ (Wave_4lol) = 4СЏ РІРѕР»РЅР°
+				// пытаемся выяснить номер волны исходя из названия волны (Wave_4lol) = 4я волна
 				if ( !TryGetNumber(string(tWaveInfo.Name), tWaveInfo.Position) )
 				{
 					tWaveInfo.Position = FMax(GetLastWave().Position,0.f) + 0.1;
 					toLog("Wave:"@string(tWaveInfo.Name)@"Position not specified. Also no numbers in WaveName. So position will be"@tWaveInfo.Position@". The wave is map-specific, and specified for map"@string(tMapInfo.Name)@". Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
 				}
-				// TODO РґРµР»Р°С‚СЊ Р»Рё tWaveInfo.SaveConfig(), С‡С‚РѕР±С‹ Р·Р°РїРёСЃР°С‚СЊ С‚РѕР»СЊРєРѕ С‡С‚Рѕ РЅР°Р№РґРµРЅС‹Р№ Position?? РўРѕРіРґР° РёР· РєРѕРЅС„РёРіР° СѓРґР°Р»СЏС‚СЃСЏ РЅРµРІР°Р»РёРґРЅС‹Рµ СЃРєРІР°РґС‹
+				// TODO делать ли tWaveInfo.SaveConfig(), чтобы записать только что найденый Position?? Тогда из конфига удалятся невалидные сквады
 			}
 			while (bWavePositionAlreadyExist(tWaveInfo.Position))
 			{
@@ -491,15 +797,137 @@ function ReadConfig()
 		}
 	}
 	MapInfo = tMapInfo;
+}*/
+//--------------------------------------------------------------------------------------------------
+function CheckConfig()
+{
+	local int i,j,n;
+	local bool bFound;
+
+// МОНСТРЫ
+	for (i=Monsters.Length-1; i>=0; --i)
+	{
+	// Валидность MonsterClass'ов
+		for (j=Monsters[i].MonsterClass.Length-1; j>=0; --j)
+		{
+			if (Monsters[i].MonsterClass[j] == none)
+			{
+				toLog("Monster:"@string(Monsters[i].Name)$". MonsterClass["$j$"] not found. Check settings in"@class'MCMonsterInfo'.default.ConfigFile$".ini");
+				Monsters[i].MonsterClass.Remove(j,1); continue;
+			}
+			else
+				AddServerPackage( Monsters[i].MonsterClass[j].Outer.Name );
+		}
+		if (Monsters[i].MonsterClass.Length==0)
+		{
+			toLog("Monster:"@string(Monsters[i].Name)$". Will be not loaded. No valid MonsterClasses found. Check settings in"@class'MCMonsterInfo'.default.ConfigFile$".ini");
+			Monsters.Remove(i,1);
+			continue;
+		}
+	// Валидность Резистов
+		for (j=Monsters[i].Resist.Length-1; j>=0; --j)
+			if (Monsters[i].Resist[j].DamType==none)
+			{
+				toLog("Monster:"@string(Monsters[i].Name)$". Invalid DamType for Resist["$j$"]. Check settings in"@class'MCMonsterInfo'.default.ConfigFile$".ini");
+				Monsters[i].Resist.Remove(j,1); continue;
+			}		
+	}
+	if (Monsters.Length==0)
+		toLog("No valid Monsters found! So no monsters will spawn");
+// ОТРЯДЫ
+	for (i=Squads.Length-1; i>=0; --i)
+	{
+	// Валидность Squads[i]
+		for (j=Squads[i].Monster.Length-1; j>=0; --j)
+		{
+		// Проверяем Monster[j]
+			for (n=Squads[i].Monster[j].MonsterName.Length-1; n>=0; --n)
+				if ( GetMonster(Squads[i].Monster[j].MonsterName[n]) == none )
+				{
+					toLog("Squad:"@string(Squads[i].Name)@"Monster"@Squads[i].Monster[j].MonsterName[n]@"not found. Check settings in"@class'MCSquadInfo'.default.ConfigFile$".ini");
+					Squads[i].Monster[j].MonsterName.Remove(n,1);					
+					continue;
+				}
+			if (Squads[i].Monster[j].MonsterName.Length==0)
+			{
+				toLog("Squad:"@string(Squads[i].Name)@"MonsterRecord["$j$"] - No valid monsters found. Check settings in"@class'MCSquadInfo'.default.ConfigFile$".ini");
+				Squads[i].Monster.Remove(j,1);
+			}
+		}
+		if (Squads[i].Monster.Length==0)
+		{
+			toLog("Squad:"@string(Squads[i].Name)@"No valid monster records found. Check settings in"@class'MCSquadInfo'.default.ConfigFile$".ini");
+			Squads.Remove(i,1);
+		}
+	}
+	if (Squads.Length==0)
+		toLog("No valid Squads found! So no monsters will spawn");
+
+// ВОЛНЫ загружаем ВСЕ волны (в которых есть отряды)
+	for (i=Waves.Length-1; i>=0; --i)
+	{
+		//if (Waves[i].bMapSpecific) // на этом этапе удаляем все bMapSpecific волны (грузим их позже)
+		//	{Waves.Remove(i,1); continue;}
+
+		// удаляем Squad'ы, имен которых нет в конфиге
+		for (j=Waves[i].Squad.Length-1; j>=0; --j)
+			if ( GetSquad(Waves[i].Squad[j]) == none )
+				Waves[i].Squad.Remove(j,1);
+		// удаляем SpecialSquad'ы, имен которых нет в конфиге
+		for (j=Waves[i].SpecialSquad.Length-1; j>=0; --j)
+			if ( GetSquad(Waves[i].SpecialSquad[j]) == none )
+				Waves[i].SpecialSquad.Remove(j,1);
+		// Если валидных сквадов не осталось, удаляем волну
+		if (Waves[i].Squad.Length==0 && Waves[i].SpecialSquad.Length==0)
+		{
+			toLog("Wave:" @ string(Waves[i].Name) @ "Dont have valid squads. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+			Waves.Remove(i,1); continue;
+		}
+
+	}
+// MapInfo - удаляем не валидные названия волн.
+	for (i=MapInfo.Waves.Length-1; i>=0; --i)
+		if ( Len(MapInfo.Waves[i])==0 || !isValidWaveName(MapInfo.Waves[i]) )
+		{
+			toLog("MapInfo:"@string(MapInfo.Name)@" | WaveName"@MapInfo.Waves[i]@"is not valid. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+			MapInfo.Waves.Remove(i,1); continue;
+		}
+// В загруженных волнах ищем bMapSpecific и оставляем только те, которые указаны в MapInfo
+	for (i=Waves.Length-1; i>=0; --i)
+		if (Waves[i].bMapSpecific)
+		{
+			bFound = false;
+			for (j=MapInfo.Waves.Length-1; j>=0; --j)
+				if( string(Waves[i].Name) ~= MapInfo.Waves[j] )
+					{bFound=true; break;}
+			if (!bFound)
+				Waves.Remove(i,1);
+		}
+// Проверяем Position волн
+	for (i=Waves.Length-1; i>=0; --i)
+	{
+		// Position не указан - пытаемся выяснить номер волны исходя из названия "Wave_4lol" - 4я волна
+		if (Waves[i].Position==-1)
+			TryGetNumber(string(Waves[i].Name), Waves[i].Position);
+		while (bWavePositionAlreadyExist(Waves[i].Position)>1 || Waves[i].Position==-1)
+		{
+			toLog("Wave:"@string(Waves[i].Name)@"Position"@Waves[i].Position@Eval(bWavePositionAlreadyExist(Waves[i].Position)>1,"already exists","not specified") @ "Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
+			Waves[i].Position+=0.1;
+		}
+		// TODO делать ли tWaveInfo.SaveConfig(), чтобы записать только что найденый Position?? Тогда из конфига удалятся невалидные сквады
+		toLog("Wave:"@string(Waves[i].Name)@"loaded with position"@Waves[i].Position);
+	}
+	if (Waves.Length==0)
+		toLog("No valid WaveInfo's found! So no monsters will spawn");
 }
 //--------------------------------------------------------------------------------------------------
-function bool bWavePositionAlreadyExist(float F)
+function int bWavePositionAlreadyExist(float F)
 {
-	local int i;
-	for (i=0;i<Waves.Length;i++)
+	local int i, n;
+	for (i=Waves.Length-1; i>=0; --i)
 		if (Waves[i].Position == F)
-			return true;
-	return false;
+			n++;
+	return n;
 }
 //--------------------------------------------------------------------------------------------------
 function MCWaveInfo GetLastWave()
@@ -508,7 +936,7 @@ function MCWaveInfo GetLastWave()
 	local MCWaveInfo Wave;
 	Wave = Waves[0];
 	toLog("GetLastWave() Best Wave:"@string(Wave.Name)@Wave.Position);
-	for (i=0;i<Waves.Length;i++)
+	for (i=Waves.Length-1; i>=0; --i)
 	{
 		toLog("GetLastWave() Check Wave:"@string(Waves[i].Name)@Waves[i].Position);
 		if (Waves[i].Position > Wave.Position)
@@ -526,7 +954,7 @@ function MCWaveInfo GetFirstWave()
 	local MCWaveInfo Wave;
 	Wave = Waves[0];
 	toLog("GetFirstWave() Best Wave:"@string(Wave.Name)@Wave.Position);
-	for (i=0;i<Waves.Length;i++)
+	for (i=Waves.Length-1; i>=0; --i)
 	{
 		toLog("GetFirstWave() Check Wave:"@string(Waves[i].Name)@Waves[i].Position);
 		if (Waves[i].Position < Wave.Position)
@@ -543,18 +971,19 @@ function bool isValidWaveName(string WaveName)
 	local array<string> Names;
 	local int i;
 	Names = class'MCWaveInfo'.static.GetNames();
-	for (i=0; i<Names.Length; i++)
+	for (i=Names.Length-1; i>=0; --i)
 		if (WaveName ~= Names[i])
 			return true;
 	return false;
 }
 //--------------------------------------------------------------------------------------------------
+// УЖЕ НЕ ИСПОЛЬЗУЕТСЯ, можно подчистить
 function bool isValidWave(out MCWaveInfo tWaveInfo)
 {
 	local int j;
 	for (j=0; j < tWaveInfo.Squad.Length; j++)
 	{
-		// СѓРґР°Р»СЏРµРј СЃРєРІР°РґС‹, РёРјРµРЅ РєРѕС‚РѕСЂС‹С… РЅРµС‚ РІ РєРѕРЅС„РёРіРµ
+		// удаляем сквады, имен которых нет в конфиге
 		if ( GetSquad(tWaveInfo.Squad[j]) == none )
 		{
 			toLog("Wave:"@string(tWaveInfo.Name)@"Squad"@tWaveInfo.Squad[j]@"not found. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
@@ -564,7 +993,7 @@ function bool isValidWave(out MCWaveInfo tWaveInfo)
 	}
 	for (j=0; j < tWaveInfo.SpecialSquad.Length; j++)
 	{
-		// СѓРґР°Р»СЏРµРј СЃРєРІР°РґС‹, РёРјРµРЅ РєРѕС‚РѕСЂС‹С… РЅРµС‚ РІ РєРѕРЅС„РёРіРµ
+		// удаляем сквады, имен которых нет в конфиге
 		if ( GetSquad(tWaveInfo.SpecialSquad[j]) == none )
 		{
 			toLog("Wave:"@string(tWaveInfo.Name)@"SpecialSquad"@tWaveInfo.SpecialSquad[j]@"not found. Check"@class'MCWaveInfo'.default.ConfigFile$".ini");
@@ -578,8 +1007,8 @@ function bool isValidWave(out MCWaveInfo tWaveInfo)
 function MCSquadInfo GetSquad(string SquadName)
 {
 	local int i;
-	for (i=0;i<Squads.Length;i++)
-		if (SquadName == string(Squads[i].Name))
+	for (i=Squads.Length-1; i>=0; --i)
+		if (SquadName ~= string(Squads[i].Name))
 			return Squads[i];
 	return None;
 }
@@ -587,54 +1016,75 @@ function MCSquadInfo GetSquad(string SquadName)
 function MCMonsterInfo GetMonster(string MonsterName)
 {
 	local int i;
-	for (i=0; i<Monsters.Length; i++)
-		if (MonsterName == string(Monsters[i].Name))
+	for (i=Monsters.Length-1; i>=0; --i)
+		if (MonsterName ~= string(Monsters[i].Name))
 			return Monsters[i];
 	return None;
 }
 //--------------------------------------------------------------------------------------------------
 function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
 {
-	// РЎРїР°РІРЅРёРј MCRepInfo РЅР°С€ Linked ReplicationInfo СЃ РґРѕРї.СЃС‚Р°С‚РёСЃС‚РёРєРѕР№ Рё СЃРІРѕРёРј KillsMessage
+	// Спавним MCRepInfo наш Linked ReplicationInfo с доп.статистикой и своим KillsMessage
 	if (PlayerController(Other)!=none)
 	{
 		PendingPlayers[PendingPlayers.Length] = PlayerController(Other);
 		SetTimer(0.1,false);
 	}
 
-	// Mesh-С„РёРєСЃ РЅРµ РЅР°С€РёС… РјРѕРЅСЃС‚СЂРѕРІ
+	// Mesh-фикс не наших монстров
 	else if (KFMonster(Other)!=none)
 	{
 		PendingMonsters[PendingMonsters.Length] = KFMonster(Other);
 		SetTimer(0.1, false);
 	}
 
-	// Р—Р°РјРµРЅР° ZombieVolumes РЅР° MCZombieVolume
+	// Замена ZombieVolumes на MCZombieVolume
 	else if ( ZombieVolume(Other)!=none && MCZombieVolume(Other)==none )
 		PendingZombieVolumes[PendingZombieVolumes.Length] = ZombieVolume(Other);
 
 	return true;
 }
 //--------------------------------------------------------------------------------------------------
-// СЂР°Р·РІРѕСЂР°С‡РёРІР°РµРј РЅР° РєР»РёРµРЅС‚Рµ СЂРµРїР»РёС†РёСЂРѕРІР°РЅРЅСѓСЋ СЃС‚СЂРѕРєСѓ MapInfo
+// разворачиваем на клиенте реплицированную строку MapInfo
 simulated function ExtractMapInfo(string input)
 {
 	local string tName;
+	/*	
+	if (MapInfo!=none)
+	{
+		MapInfo.Waves.Remove(0,MapInfo.Waves.Length);
+		Level.ObjectPool.FreeObject(MapInfo);
+		MapInfo = none;
+	}
+	*/
 	tName = class'MCMapInfo'.static.UnSerializeName(input);
 	if (MapInfo==none)
 		MapInfo = new(None, tName) class'MCMapInfo';
-	LM("Client got MapInfo. Name"@tName@"Level.outer.name"@string(Level.outer.name));
 	MapInfo.Unserialize(input);
+	LM("Client got MapInfo. Name"@tName@"Level.outer.name"@string(Level.outer.name));
 }
 //--------------------------------------------------------------------------------------------------
-// СЂР°Р·РІРѕСЂР°С‡РёРІР°РµРј РЅР° РєР»РёРµРЅС‚Рµ СЂРµРїР»РёС†РёСЂРѕРІР°РЅРЅСѓСЋ СЃС‚СЂРѕРєСѓ СЃРѕРґРµСЂР¶Р°С‰СѓСЋ MonsterInfo's
-simulated function ExtractMonsters(string input)
+// разворачиваем на клиенте реплицированную строку содержащую MonsterInfo's
+// разворачиваем на сервере информацию из GUI (флаг bClear указывает, что вначале нужно все стереть)
+simulated function ExtractMonsters(string input, optional bool bClear)
 {
 	local int				i,j,n;
 	local string			MInfoStr, S;
 	local array<string>		iSplit;
 	local bool				bFound;
 
+	if (bClear)
+		for (i=Monsters.Length-1; i>=0; --i)
+		{
+			Monsters[i].MonsterClass.Remove(0,Monsters[i].MonsterClass.Length);
+			Monsters[i].Resist.Remove(0,Monsters[i].Resist.Length);
+			Monsters[i].Mesh.Remove(0,Monsters[i].Mesh.Length);
+			Monsters[i].Skins.Remove(0,Monsters[i].Skins.Length);
+			Level.ObjectPool.FreeObject(Monsters[i]);
+			Monsters[i]=none;
+			Monsters.Remove(i,1);
+		}
+	
 	n = Split(input, rDataDelim, iSplit);
 	for (i=0;i<n;i++)
 	{
@@ -658,6 +1108,99 @@ simulated function ExtractMonsters(string input)
 			LM("Client got MonsterInfo for"@S@string(Monsters[j].Name));
 		}
 	}
+}
+//--------------------------------------------------------------------------------------------------
+// TODO проверить работоспособность
+simulated function ExtractSquads(string input, optional bool bClear)
+{
+	local int i,j,n;
+	local array<string> iSplit;
+	local string S;
+	local bool bFound;
+	
+	if (bClear)
+		for (i=Squads.Length-1; i>=0; --i)
+		{
+			Squads[i].Monster.Remove(0,Squads[i].Monster.Length);
+			Level.ObjectPool.FreeObject(Squads[i]);
+			Squads[i]=none;
+			Squads.Remove(i,1);		
+		}
+
+	n = Split(input, rDataDelim, iSplit);
+	for (i=0;i<n;i++)
+	{
+		S = class'MCSquadInfo'.static.UnserializeName(iSplit[i]);
+		bFound=false;
+		for (j=0;j<Squads.Length;j++)
+			if (string(Squads[j].Name) ~= S)
+			{
+				bFound=true;
+				Squads[j].Unserialize(iSplit[i]);
+				LM("Client got SquadInfo for"@S@string(Squads[j].Name));
+				break;
+			}
+		if (bFound==false)
+		{
+			j = Squads.Length;
+			Squads.Insert(j,1);
+			Squads[j] = new(None, S) class'MCSquadInfo';
+			Squads[j].Unserialize(iSplit[i]);
+			LM("Client got SquadInfo for"@S@string(Squads[j].Name));
+		}
+	}
+}
+//--------------------------------------------------------------------------------------------------
+// TODO проверить работоспособность
+simulated function ExtractWaves(string input, optional bool bClear)
+{
+	local int i,j,n;
+	local array<string> iSplit;
+	local string S;
+	local bool bFound;
+
+	if (bClear)
+		for (i=Waves.Length-1; i>=0; --i)
+		{
+			Waves[i].Squad.Remove(0,Waves[i].Squad.Length);
+			Waves[i].SpecialSquad.Remove(0,Waves[i].SpecialSquad.Length);
+			Level.ObjectPool.FreeObject(Waves[i]);
+			Waves[i]=none;
+			Waves.Remove(i,1);		
+		}
+
+	n = Split(input, rDataDelim, iSplit);
+	for (i=0;i<n;i++)
+	{
+		S = class'MCWaveInfo'.static.UnserializeName(iSplit[i]);
+		bFound=false;
+		for (j=0;j<Waves.Length;j++)
+			if (string(Waves[j].Name) ~= S)
+			{
+				bFound=true;
+				Waves[j].Unserialize(iSplit[i]);
+				LM("Client got WaveInfo for"@S@string(Waves[j].Name));
+				break;
+			}
+		if (bFound==false)
+		{
+			j = Waves.Length;
+			Waves.Insert(j,1);
+			Waves[j] = new(None, S) class'MCWaveInfo';
+			Waves[j].Unserialize(iSplit[i]);
+			LM("Client got WaveInfo for"@S@string(Waves[j].Name));
+		}
+	}
+}
+//--------------------------------------------------------------------------------------------------
+simulated function ExtractGameInfo(string input)
+{
+	/*if (GameInfo!=none)
+	{
+		Level.ObjectPool.FreeObject(GameInfo);
+		GameInfo = none;
+	}*/
+	GameInfo.Unserialize(input);
 }
 //--------------------------------------------------------------------------------------------------
 simulated function ExtractFixMeshInfo(string input)
@@ -699,8 +1242,8 @@ simulated function FixMeshInfos()
 	local MCFixMeshInfo tFixInfo;
 	local bool lDebug;
 	lDebug = false;
-	
-	for (i=0;i<FixMeshInfo.Length;i++)
+
+	for (i=FixMeshInfo.Length-1; i>=0; --i)
 	{
 		tFixInfo = FixMeshInfo[i];
 		if (tFixInfo.MClass==none)
@@ -710,7 +1253,7 @@ simulated function FixMeshInfos()
 		}
 		if (tFixInfo.Mesh!=none)
 		{
-			tFixInfo.MClass.static.UpdateDefaultMesh(tFixInfo.Mesh);	
+			tFixInfo.MClass.static.UpdateDefaultMesh(tFixInfo.Mesh);
 			if (lDebug) LM("Fixed mesh for"@string(tFixInfo.MClass)@"Mesh"@string(tFixInfo.Mesh));
 		}
 		else
@@ -733,26 +1276,14 @@ simulated function Tick(float dt)
 {
 	local int bBadCRC;
 	local string S;
+	local bool lDebug;
+	lDebug = true;
 
 	if (Level == none)
 		return;
 
-	if (Level.NetMode != NM_Client)
-	{
-		if (GT == none)
-		{
-			GT = MCGameType(Level.Game);
-			if ( GT == none )
-				return;
-		}
-		while ( PendingZombieVolumes.Length > 0 )
-		{
-			ReplaceZombieVolume(PendingZombieVolumes[0]);
-			PendingZombieVolumes.Remove(0,1);
-		}
-	}
-
-	// Р¤РёРєСЃРёРј FixMeshInfo РЅР° СЃРµСЂРІРµСЂРµ Рё РєР»РёРµРЅС‚Рµ
+// ВСЕ
+	// Фиксим FixMeshInfo
 	if (bFixChars==false
 		&& RDataFixMeshInfo!=none
 		&& RDataFixMeshInfo.revisionClient != RDataFixMeshInfo.revision)
@@ -768,10 +1299,87 @@ simulated function Tick(float dt)
 		}
 	}
 
-	// РћР±СЂР°Р±Р°С‚С‹РІР°РµРј РЅР° РєР»РёРµРЅС‚Рµ
+// СЕРВЕР или STANDALONE
+	if (Level.NetMode != NM_Client)
+	{
+		if (GT == none)
+		{
+			GT = MCGameType(Level.Game);
+			if ( GT == none )
+				return;
+		}
+		while ( PendingZombieVolumes.Length > 0 )
+		{
+			ReplaceZombieVolume(PendingZombieVolumes[0]);
+			PendingZombieVolumes.Remove(0,1);
+		}
+		
+		// Apply arrived new RDataGUI on ServerSide, and prepare new RDataServer
+		/*
+		if (RDataGUI != none && RDataGUI.revisionClient != RDataGUI.revision)
+		{
+			S = RDataGUI.GetString(bBadCRC);
+			if (bBadCRC==0)
+			{
+				RDataGUI.revisionClient = RDataGUI.revision;
+				ExtractRDataGUI(S);	// разворачиваем пришедшие данные
+				CheckConfig();		// проверяем пришедшие данные
+				
+				// тут баг. в Standalone вызывает постоянный прием RDataGUI и вызов ExtractALL
+				/*ScriptLog: LM:Client got MonsterInfo for clot clot
+				ScriptLog: LM:Client got MonsterInfo for GoreFast GoreFast
+				ScriptLog: LM:Client got MonsterInfo for Crawler Crawler
+				ScriptLog: LM:Client got MonsterInfo for Bloat Bloat
+				ScriptLog: LM:Client got MonsterInfo for Stalker Stalker
+				ScriptLog: LM:Client got MonsterInfo for siren siren
+				ScriptLog: LM:Client got MonsterInfo for Husk Husk
+				ScriptLog: LM:Client got MonsterInfo for Scrake Scrake
+				ScriptLog: LM:Client got MonsterInfo for Fleshpound Fleshpound
+				ScriptLog: LM:Client got MonsterInfo for Boss Boss
+				ScriptLog: LM:Client got MonsterInfo for Brute Brute
+				ScriptLog: LM:Client got MonsterInfo for Jason Jason
+				ScriptLog: LM:Client got MonsterInfo for Fatale Fatale
+				ScriptLog: LM:Client got MonsterInfo for ClotBossInvis ClotBossInvis
+				ScriptLog: LM:Client got MonsterInfo for BruteDTDK BruteDTDK
+				ScriptLog: LM:Client got SquadInfo for sq_Clot sq_Clot
+				ScriptLog: LM:Client got SquadInfo for sq_Cl_Gf_Cr sq_Cl_Gf_Cr
+				ScriptLog: LM:Client got SquadInfo for sq_Gorefast sq_Gorefast
+				ScriptLog: LM:Client got SquadInfo for sq_Crawler sq_Crawler
+				ScriptLog: LM:Client got SquadInfo for sq_Stalker sq_Stalker
+				ScriptLog: LM:Client got SquadInfo for sq_Siren sq_Siren
+				ScriptLog: LM:Client got SquadInfo for sq_Husk sq_Husk
+				ScriptLog: LM:Client got SquadInfo for sq_Brute sq_Brute
+				ScriptLog: LM:Client got SquadInfo for sq_Scrake sq_Scrake
+				ScriptLog: LM:Client got SquadInfo for sq_Jason sq_Jason*/
+				//MakeRData();		// реплицируем новые данные клиентам 
+				
+				ReInit();
+			}
+		}*/
+	}
+
+// КЛИЕНТ или STANDALONE
 	if (Level.NetMode!=NM_DedicatedServer)
 	{
-		// РџСЂРёРЅРёРјР°РµРј РЅР° РєР»РёРµРЅС‚Рµ РјР°СЃСЃРёРІ Monsters
+	// Открываем GUI
+		if ( menuRevClient != menuRev && menuPC != none )
+		{
+			if( menuPC != Level.GetLocalPlayerController() )
+				menuRevClient = menuRev;
+			else if( RDataGUI != none )					
+			{
+				S = RDataGUI.GetString(bBadCRC);
+				if (bBadCRC==0 && Len(S)>0)
+				{
+					ExtractRDataGUI(S);
+					menuRevClient = menuRev;
+					menuPC.ClientOpenMenu(string(Class'MCGUIMenu'),,,);
+					if (lDebug) menuPC.ClientMessage("MonsterConfig: Now you must see the GUI menu");
+				}
+			}
+		}
+		
+	// Принимаем Monsters
 		if (RDataMonsters!=none
 			&& RDataMonsters.revisionClient != RDataMonsters.revision)
 		{
@@ -784,7 +1392,7 @@ simulated function Tick(float dt)
 			}
 		}
 
-		// РџСЂРёРЅРёРјР°РµРј РЅР° РєР»РёРµРЅС‚Рµ MapInfo
+	// Принимаем MapInfo
 		if (RDataMapInfo!=none
 			&& RDataMapInfo.revisionClient != RDataMapInfo.revision)
 		{
@@ -793,6 +1401,21 @@ simulated function Tick(float dt)
 			{
 				RDataMapInfo.revisionClient = RDataMapInfo.revision;
 				ExtractMapInfo(S);
+			}
+		}
+		
+	// Принимаем GameInfo
+		if (RDataGameInfo!=none
+			&& RDataGameInfo.revisionClient != RDataGameInfo.revision)
+		{
+			S = RDataGameInfo.GetString(bBadCRC);
+			if (bBadCRC==0 && Len(S)>0)
+			{
+				RDataGameInfo.revisionClient = RDataGameInfo.revision;
+				if (GameInfo==none)
+					GameInfo = new(None, "GameInfo") class'MCGameInfo';
+				toLog("GameInfo arrived");
+				GameInfo.Unserialize(S);
 			}
 		}
 	}
@@ -825,7 +1448,7 @@ simulated function WaveEnd()
 	AliveMonsters.Clear();
 }
 //--------------------------------------------------------------------------------------------------
-// Р—Р°РїРѕР»РЅСЏРµРј РјР°СЃСЃРёРІ AliveMonsters, РґР»СЏ СЃРѕРїРѕСЃС‚Р°РІР»РµРЅРёСЏ Monster Рё РµРіРѕ MonsterInfo (РґР»СЏ ReduceDamage)
+// Заполняем массив AliveMonsters, для сопоставления Monster и его MonsterInfo (для ReduceDamage)
 function NotifyMonsterSpawn(Controller Controller, MCMonsterInfo MonInfo)
 {
 	AliveMonsters.Add(Controller, string(MonInfo.Name));
@@ -841,8 +1464,8 @@ function bool ReplaceZombieVolume(ZombieVolume CurZMV)
 	local int i,n,j;
 	local MCZombieVolume NewVol;
 
-	// РѕРїСЂРµРґРµР»СЏРµРј С‡С‚Рѕ ZombieVolume РµСЃС‚СЊ РІ Р»РёСЃС‚Рµ ZedSpawnList, РёРЅР°С‡Рµ РЅРµ Р·Р°РјРµРЅСЏРµРј.
-	// TELO: Р—Р°С‡РµРј СЌС‚Р° РїСЂРѕРІРµСЂРєР°? Р·Р°РјРµРЅСЏС‚СЊ Р»СЋР±РѕР№ РІРѕР»СѓРј, РїРѕРїР°РІС€РёР№СЃСЏ CheckReplacement'Сѓ Рё РїСЂРёС€РµРґС€РёР№ СЃСЋРґР°
+	// определяем что ZombieVolume есть в листе ZedSpawnList, иначе не заменяем.
+	// TELO: Зачем эта проверка? заменять любой волум, попавшийся CheckReplacement'у и пришедший сюда
 	n = GT.ZedSpawnList.Length;
 	for(i=0; i<n; i++)
 		if ( CurZMV == GT.ZedSpawnList[i] )
@@ -850,14 +1473,14 @@ function bool ReplaceZombieVolume(ZombieVolume CurZMV)
 	if ( i >= n )
 	{
 		toLog("ReplaceZombieVolume: ZombieVolume not found");
-		return false; // ZombieVolume РЅРµ РЅР°Р№РґРµРЅ, РІС‹С…РѕРґ
+		return false; // ZombieVolume не найден, выход
 	}
 
 	NewVol = Spawn(class'MCZombieVolume',Level,,CurZMV.Location,CurZMV.Rotation);
 
 	NewVol.SandboxController = self;
 
-	// РєРѕРїРёСЂСѓРµРј С‚РѕС‡РєРё СЃРїР°РІРЅР°
+	// копируем точки спавна
 	n = CurZMV.SpawnPos.Length;
 	for(j=0; j<n; j++)
 		NewVol.SpawnPos[j] = CurZMV.SpawnPos[j];
@@ -893,7 +1516,7 @@ function bool ReplaceZombieVolume(ZombieVolume CurZMV)
 	NewVol.bNoZAxisDistPenalty = CurZMV.bNoZAxisDistPenalty;
 	// NewVol. = CurZMV.;
 
-	// CurZMV.Destroy(); // РЅРµ СѓРЅРёС‡С‚РѕР¶Р°РµРј, РІРѕР·РјРѕР¶РЅРѕ РЅСѓР¶РЅС‹ РґР»СЏ РјР°РїРїРµСЂРѕРІ
+	// CurZMV.Destroy(); // не уничтожаем, возможно нужны для мапперов
 	GT.ZedSpawnList[i] = NewVol;
 
 	return true;
@@ -903,7 +1526,7 @@ function toLog(string M, optional Object Sender)
 {
 	local string Spec;
 
-	// РёРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј Р»РѕРі
+	// инициализируем лог
 	/*
 	 * if (MCLog==none)
 	{
@@ -928,7 +1551,7 @@ function Destroyed()
 	Super.Destroyed();
 }
 //--------------------------------------------------------------------------------------------------
-// С„СѓРЅРєС†РёСЏ РЅР° РІС…РѕРґ РїРѕР»СѓС‡Р°РµС‚ СЃС‚СЂРѕРєСѓ Wave_1 РЅР° РІС‹С…РѕРґРµ РІС‹РґР°РµС‚ 1 (float)
+// функция на вход получает строку Wave_1 на выходе выдает 1 (float)
 function bool TryGetNumber(string S, out float F)
 {
 	local int i;
@@ -962,43 +1585,53 @@ function bool IsNumber(string Num)
 	return false;
 }
 //--------------------------------------------------------------------------------------------------
-// С„СѓРЅРєС†РёСЏ РІРѕР·РІСЂР°С‰Р°РµС‚ СЃР»РµРґСѓСЋС‰СѓСЋ РїРѕСЃР»Рµ CurWave РІРѕР»РЅСѓ, Р° РїСЂРё РЅРµСѓРґР°С‡Рµ РІРѕР·РІСЂР°С‰Р°РµС‚ none
+// функция возвращает следующую после CurWave волну, а при неудаче возвращает none
 function MCWaveInfo GetNextWaveInfo(MCWaveInfo CurWave)
 {
 	local int i;
 	local float BestPos;
 	local MCWaveInfo Ret;
+	local bool lDebug;
+	lDebug=true;
 
-	if (CurWave==none) // РїСЂРё РїРµСЂРІРѕР№ РІРѕР»РЅРµ
-		return GetFirstWave();
+	if (CurWave==none) // при первой волне
+	{
+		Ret = GetFirstWave();
+		if (lDebug) toLog("GetNextWaveInfo(): CurWave==none, returning FirstWave"@string(Ret.Name));
+		return Ret;
+	}
 
 	BestPos = CurWave.Position;
-	for (i=0;i<Waves.Length;i++)
+	for (i=Waves.Length-1; i>=0; --i)
 	{
-		if ( Waves[i].Position <= BestPos )	// РёС‰РµРј С‚РѕР»СЊРєРѕ РІРѕР»РЅС‹, СЃР»РµРґСѓСЋС‰РёРµ Р·Р° С‚РµРєСѓС‰РµР№,
-			continue;						//Р° РїСЂРµРґС‹РґСѓС‰РёРµ Рё СЂР°РІРЅС‹Рµ С‚РµРєСѓС‰РµР№ РїСЂРѕРїСѓСЃРєР°РµРј
-		if (BestPos == CurWave.Position)	// РµСЃР»Рё РµС‰Рµ РЅРёС‡РµРіРѕ РЅРµ РЅР°С€Р»Рё,
-		{									// С‚Рѕ Р±РµСЂРµРј РїРµСЂРІСѓСЋ РїРѕРїР°РІС€СѓСЋСЃСЏ РІРѕР»РЅСѓ
+		if ( Waves[i].Position <= CurWave.Position )	// ищем только волны, следующие за текущей,
+			continue;						//а предыдущие и равные текущей пропускаем
+		if (BestPos == CurWave.Position)	// если еще ничего не нашли,
+		{									// то берем первую попавшуюся волну
 			Ret = Waves[i];
 			BestPos = Waves[i].Position;
 		}
-		else if (Waves[i].Position < BestPos) // Р° РґР°Р»СЊС€Рµ СѓР¶Рµ РѕС‚СЃРµРёРІР°РµРј СЃ РЅР°РёРјРµРЅСЊС€РёРј РЅРѕРјРµСЂРѕРј
+		else if (Waves[i].Position < BestPos) // а дальше уже отсеиваем с наименьшим номером
 		{
 			Ret = Waves[i];
 			BestPos = Waves[i].Position;
 		}
 	}
 	if (Ret==CurWave)
+	{
+		if (lDebug) toLog("GetNextWaveInfo(): Ret == CurWave"@string(CurWave.Name)@"so return none");
 		return none;
-
+	}
+	
+	if (lDebug) toLog("GetNextWaveInfo(): CurWave"@string(CurWave.Name)@"NextWave"@string(Ret.Name));
 	return Ret;
 }
 //--------------------------------------------------------------------------------------------------
 function MCWaveInfo GetWave(string W)
 {
 	local int i;
-	for (i=0;i<Waves.Length;i++)
-		if (string(Waves[i].Name)~=W)
+	for (i=Waves.Length-1; i>=0; --i)
+		if (W ~= string(Waves[i].Name))
 			return Waves[i];
 	return none;
 }
@@ -1007,7 +1640,7 @@ function int GetWaveNum(MCWaveInfo Wave)
 {
 	local int i, num;
 	num = 1;
-	for (i=0;i<Waves.Length;i++)
+	for (i=Waves.Length-1; i>=0; --i)
 	{
 		if (Waves[i].Position < Wave.Position)
 			num++;
@@ -1020,11 +1653,11 @@ simulated function float GetNumPlayers(optional bool bOnlyAlive, optional bool b
 {
 	local Controller C;
 
-	// РїРµСЂРµСЃС‡РµС‚ С‚РѕР»СЊРєРѕ РЅР° СЃРµСЂРІРµСЂРµ (controllerС‹ РЅР° РєР»РёРµРЅС‚Рµ РЅРµ СЃРїР°РІРЅСЏС‚СЃСЏ)
-	// РїРµСЂРµСЃС‡РёС‚Р°РЅРЅС‹Р№ numplayers СЂРµРїР»РёС†РёСЂСѓРµС‚СЃСЏ РЅР° РєР»РёРµРЅС‚С‹, РґР»СЏ РЅРёС… СЌС‚Р° С„СѓРЅРєС†РёСЏ РѕСЃС‚Р°РµС‚СЃСЏ СЂР°Р±РѕС‡РµР№
+	// пересчет только на сервере (controllerы на клиенте не спавнятся)
+	// пересчитанный numplayers реплицируется на клиенты, для них эта функция остается рабочей
 	if (Level.NetMode != NM_Client)
 	{
-		if (NumPlayersRecalcTime<Level.TimeSeconds) // РєСЌС€РёСЂСѓРµРј Р·РЅР°С‡РµРЅРёРµ, РїРµСЂРµСЃС‡РµС‚ РєР°Р¶РґС‹Рµ 5 СЃРµРє
+		if (NumPlayersRecalcTime<Level.TimeSeconds) // кэшируем значение, пересчет каждые 5 сек
 		{
 			NumPlayers=0;
 			for( C=Level.ControllerList; C!=None; C=C.NextController )
@@ -1035,7 +1668,7 @@ simulated function float GetNumPlayers(optional bool bOnlyAlive, optional bool b
 	}
 
 	if ( !bNotCountFaked )
-		return NumPlayers + FakedPlayersNum;
+		return NumPlayers + GameInfo.FakedPlayersNum;
 	return NumPlayers;
 }
 //--------------------------------------------------------------------------------------------------
@@ -1045,17 +1678,17 @@ function Timer()
 	local MCRepInfo RInfo;
 	local KFMonster Mon;
 
-	/*// РЎРєРёРґС‹РІР°РµРј Р»РѕРі РЅР° РґРёСЃРє
+	/*// Скидываем лог на диск
 	if ( MCLog != none )
 	{
 		MCLog.CloseLog();
 		MCLog.OpenLog("MonsterConfigLog","log",false);
 	}
 	SetTimer(15,false);*/
-	
+
 	if (Level!=none && Level.NetMode != NM_Client)
 	{
-		// РЎРїР°РІРЅРёРј MCCustomRepInfo (РґР»СЏ СЂР°Р±РѕС‚С‹ Killmessages) Рё РµСЃР»Рё bWaveFundSystem==true
+		// Спавним MCCustomRepInfo (для работы Killmessages) и bWaveFundSystem
 		for( i=PendingPlayers.Length-1; i>=0; --i )
 		{
 			if (PendingPlayers[i] == none)
@@ -1068,9 +1701,9 @@ function Timer()
 			{
 				RInfo = GetMCRepInfo(PendingPlayers[i].PlayerReplicationInfo);
 				if (RInfo==none)
-					RInfo = Spawn(class'MCRepInfo', PendingPlayers[i]); // РІСЃС‚Р°РІРёС‚СЃСЏ РІ CustomRepLink С†РµРїРѕС‡РєСѓ СЃР°РјР°
+					RInfo = Spawn(class'MCRepInfo', PendingPlayers[i]); // вставится в CustomRepLink цепочку сама
 
-				RInfo.SandboxController = self; // РґР»СЏ ClientKilledMonster, С‡С‚РѕР±С‹ РёРјРµС‚СЊ РґРѕСЃС‚СѓРї Рє Monsters Рё РёРјРµРЅР°Рј РјРѕРЅСЃС‚СЂРѕРІ
+				RInfo.SandboxController = self; // для ClientKilledMonster, чтобы иметь доступ к Monsters и именам монстров
 
 				if (GetHealedStats(PendingPlayers[i].PlayerReplicationInfo, RInfo.HealedStat))
 					PendingPlayers.Remove(i,1);
@@ -1078,8 +1711,8 @@ function Timer()
 		}
 		if (PendingPlayers.Length>0)
 			SetTimer(0.1,false);
-		
-		// Р”РѕР±Р°РІР»СЏРµРј С‚РѕР»СЊРєРѕ С‚РµС…, Сѓ РєРѕС‚РѕСЂС‹С… Mesh==none (РїРѕ СЃСѓС‚Рё, РґРѕ AliveMonsters.Find РЅРµ РґРѕС…РѕРґРёС‚ РЅРёРєС‚Рѕ)
+
+		// Добавляем только тех, у которых Mesh==none (по сути, до AliveMonsters.Find не доходит никто)
 		for (i=PendingMonsters.Length-1; i>=0; --i)
 		{
 			Mon = PendingMonsters[i];
@@ -1130,7 +1763,7 @@ simulated function bool GetDefaultSkins(class<KFMonster> KCM, out array<Material
 	if( KCM==None )
 		return false;
 
-	for (i=0;i<FixMeshInfo.Length;i++)
+	for (i=FixMeshInfo.Length-1; i>=0; --i)
 		if ( ClassIsChildOf(KCM, FixMeshInfo[i].MClass) )
 		{
 			if (Skins.Length < FixMeshInfo[i].Skins.Length)
@@ -1197,7 +1830,7 @@ simulated function Mesh GetDefaultMesh(class<KFMonster> KCM)
 	local int i;
 	if(KCM==None)
 		return none;
-	for (i=0;i<FixMeshInfo.Length;i++)
+	for (i=FixMeshInfo.Length-1; i>=0; --i)
 		if ( ClassIsChildOf(KCM, FixMeshInfo[i].MClass) )
 			return FixMeshInfo[i].Mesh;
 
@@ -1237,8 +1870,8 @@ function MCRepInfo GetMCRepInfo(PlayerReplicationInfo PRI)
 			//LM("MCRepInfo for"@PRI.PlayerName@"found with CustomReplicationInfo list");
 			return MCRepInfo(L);
 		}
-		
-	// РµСЃР»Рё РЅРµ РїРѕР»СѓС‡РёР»РѕСЃСЊ РЅР°Р№С‚Рё, РїСЂРѕР±СѓРµРј РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ СЃРїРѕСЃРѕР± СЃ DynamicActors
+
+	// если не получилось найти, пробуем использовать способ с DynamicActors
 	PC = PlayerController(PRI.Owner);
 	if (PC!=none)
 	{
@@ -1305,30 +1938,13 @@ simulated function LM(string M)
 //--------------------------------------------------------------------------------------------------
 defaultproperties
 {
+	bAddToServerPackages=True
+
 	bAlwaysRelevant=true
 	RemoteRole=ROLE_SimulatedProxy
 	//bNetNotify=true
-
-	StandartGameDifficulty = 4.0 // Hard
-	
-	FakedPlayersNum = 0
-	MonstersTotalMod = 1.00
-	MonstersMaxAtOnceMod = 1.00
-
-	MonsterBodyHPMod = 1.00
-	MonsterHeadHPMod = 1.00
-	MonsterSpeedMod = 1.00
-	MonsterDamageMod = 1.00
-	BroadcastKillmessagesMass = 1500
-	BroadcastKillmessagesHealth = 999
-
-	// Р’ РєРѕРЅС†Рµ РІРѕР»РЅС‹ РІС‹С‡РёСЃР»СЏРµРј СЃРєРѕР»СЊРєРѕ РёРіСЂРѕРє РїРѕС…РёР»РёР»
-	// Рё Рє РµРіРѕ РѕС‡РєР°Рј Р·Р° РІРѕР»РЅСѓ РґРѕР±Р°РІР»СЏРµРј Р·РЅР°С‡РµРЅРёРµ, СѓРјРЅРѕР¶РµРЅРЅРѕРµ РЅР° СЌС‚РѕС‚ РєРѕСЌС„С„РёС†РёРµРЅС‚
-	HealedToScoreCoeff = 5.00
-
-	bWaveFundSystem = false
-
-	rDataDelim = "***"
+	RDataDelim = "***"
+	RDataGUIdelim = "==="
 
 	FixMeshInfoConfig(0)=(MClass=Class'KFChar.ZombieClot',Mesh=SkeletalMesh'KF_Freaks_Trip.CLOT_Freak',Skins=(Combiner'KF_Specimens_Trip_T.clot_cmb'))
 	FixMeshInfoConfig(1)=(MClass=Class'KFChar.ZombieGorefast',Mesh=SkeletalMesh'KF_Freaks_Trip.GoreFast_Freak',Skins=(Combiner'KF_Specimens_Trip_T.gorefast_cmb'))

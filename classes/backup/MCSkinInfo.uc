@@ -1,36 +1,69 @@
-class MCMonsterInfo extends MCObject
+class MCSkinInfo extends Object
 	ParseConfig
 	PerObjectConfig
 	config(MonsterConfig);
 	
-// сколько хп добавлять к мобу за каждого игрока
-struct PerPlayerSettings
-{
-	var int Health;
-	var int HeadHealth;
-};
-// настройки резиста к дамагу
-struct ResistSettings
-{
-	var class<DamageType>	DamType;
-	var float				Coeff;
-	var bool				bNotCheckChild;
-};
+var const string	ConfigFile;
+var int				revision;
 
 // непосредственно то, что будет в конфиге
-var config array< class<KFMonster> > MonsterClass;
-var config int					Health, HeadHealth;
-var config int					HealthMax, HeadHealthMax;
-var config int 					Speed;
-var config float				SpeedMod;
-var config string				MonsterName;//редефайн, чтобы в KillMessages писало по своему
-var config PerPlayerSettings	PerPlayer;	//PerPlayerAdd=(Health=10, HeadHealth=2)
-var config array<ResistSettings> Resist;	//Resist=(DamType="KFMod.DamTypeChainsaw", coeff=0.9)
-var config float				RewardScore;
-var config float				RewardScoreCoeff;
-var config float				MonsterSize;
-var config array<Mesh>			Mesh;
+var config Mesh					Mesh;
 var config array<Material>		Skins;
+var config SoundGroup			MoanVoice;
+var config SoundGroup			MeleeAttackHitSound;
+var config SoundGroup			JumpSound;		
+var config SoundGroup			HitSound;		// fill [0]
+var config SoundGroup			DeathSound;		// fill [0]
+var config SoundGroup			ChallengeSound; // fill static array[4]
+
+
+// рабочие
+var const string delim;
+var name NameConversionHack;
+//--------------------------------------------------------------------------------------------------
+static function array<string> GetNames()
+{
+	return GetPerObjectNames(default.ConfigFile);
+}
+//--------------------------------------------------------------------------------------------------
+simulated function GetI(out string s, out int I)
+{
+	I = int(Get(S));
+}
+//--------------------------------------------------------------------------------------------------
+simulated function GetF(out string s, out float F)
+{
+	F = float(Get(S));
+}
+//--------------------------------------------------------------------------------------------------
+simulated static function string Get(out string s, optional out string str)
+{
+	local string l;
+	local int n;
+	n = InStr(s,default.delim);
+	while (n==0)
+	{
+		s = Right(s, Len(s)-1);
+		n = InStr(s,default.delim);
+	}
+	if (n==-1)
+	{
+		l=s;
+		s="";
+	}
+	else
+	{
+		l = Left(s,n);
+		s = Right(s, Len(s)-(n+1));
+	}
+	str = l;
+	return l;
+}
+//--------------------------------------------------------------------------------------------------
+simulated static function string UnSerializeName(string S)
+{
+	return Get(S);
+}
 //--------------------------------------------------------------------------------------------------
 simulated function UnSerialize(string S)
 {
@@ -38,13 +71,7 @@ simulated function UnSerialize(string S)
 	local Name tName;
 	
 	tName = StringToName(Get(S));
-	
-	MonsterClass.Remove(0,MonsterClass.Length);
-	GetI(S, n);
-	MonsterClass.Insert(0,n);
-	for (i=0;i<n;i++)
-		MonsterClass[i] = class<KFMonster>(DynamicLoadObject(Get(S), Class'Class'));
-
+	MonsterClass = class<KFMonster>(DynamicLoadObject(Get(S), Class'Class'));
 	GetI(S, Health);
 	GetI(S, HeadHealth);
 	GetI(S, HealthMax);
@@ -86,11 +113,7 @@ simulated function string Serialize()
 	local string S;
 	local int i;
 	Push(S, string(Name));
-	
-	PushI(S, MonsterClass.Length);
-	for (i=0;i<MonsterClass.Length;i++)
-		Push(S, string(MonsterClass[i]));
-
+	Push(S, string(MonsterClass));
 	PushI(S, Health);
 	PushI(S, HeadHealth);
 	PushI(S, HealthMax);
@@ -122,15 +145,35 @@ simulated function string Serialize()
 	return S;
 }
 //--------------------------------------------------------------------------------------------------
-static function array<string> GetNames()
+simulated function PushI(out string s, int input)
 {
-	return GetPerObjectNames(default.ConfigFile);
+	Push(s, string(input));
+}
+//--------------------------------------------------------------------------------------------------
+simulated function PushF(out string s, float input)
+{
+	Push(s, string(input));
+}
+//--------------------------------------------------------------------------------------------------
+simulated function Push(out string s, string input)
+{
+	if (Len(s) == 0)
+		s = input;
+	else
+		s $= delim$input;
+}
+//--------------------------------------------------------------------------------------------------
+simulated function name StringToName(string str)
+{
+  SetPropertyText("NameConversionHack", str);
+  return NameConversionHack;
 }
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 defaultproperties
 {
 	ConfigFile = "MonsterConfig"
+	delim = "+"
 	
 	// если юзер просто не указал это в конфиге, мы учтем это и не будем присваивать
 	Health=-1

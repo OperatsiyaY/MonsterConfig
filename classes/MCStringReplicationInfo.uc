@@ -2,15 +2,15 @@ class MCStringReplicationInfo extends ReplicationInfo;
 
 const MaxSize = 255;
 
-var string Str;
-var MCStringReplicationInfo Next;
-var int length;
-var int revision;
-var int revisionClient;
+var string					Str;
+var MCStringReplicationInfo	Next;
+var int						length;
+var int						revision;
+var int						revisionClient;
 
-var bool bMenuStr;
-var PlayerController OwnerPC;
-var array<string> ClientStr;
+var bool				bMenuStr;
+var PlayerController	OwnerPC;
+var array<string>		ClientStr;
 
 replication 
 {
@@ -65,12 +65,14 @@ simulated function SetString(string value)
 		Next.SetString(Right(value, len(value) - MaxSize));
 	}
 }
-
+//--------------------------------------------------------------------------------------------------
 simulated function string GetString(optional out int bBadCRC, optional bool bNext)
 {
 	local string ret;
+	
 	if (!bNext)
 	{
+		// получили запрос и этот экземпл€р €вл€емс€ первым, делаем инициализацию
 		bBadCRC = 0;
 		bNext=true;
 	}
@@ -84,18 +86,8 @@ simulated function string GetString(optional out int bBadCRC, optional bool bNex
 		bBadCRC=1;
 
 	return ret;
-/*	{
-		if (Next.GetString(S, bNext)==false)
-			return false;
-		else
-		{
-			S = Str $ S;
-			return true;
-		}
-	}*/
-	//return Str $ Next.GetString(bFull);
 }
-
+//--------------------------------------------------------------------------------------------------
 simulated function ClearString()
 {
 	Str = "";
